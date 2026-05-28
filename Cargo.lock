@@ -4355,6 +4355,7 @@ dependencies = [
  "chrono",
  "datafusion-common",
  "datafusion-expr",
+ "datafusion-functions",
  "datafusion-functions-json",
  "datafusion-functions-nested",
  "datafusion-physical-expr",
