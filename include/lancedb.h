@@ -791,6 +791,23 @@ LanceDBError lancedb_table_delete(
 );
 
 /**
+ * Delete rows from table using a DataFusion expression
+ *
+ * @param table - pointer to LanceDBTable
+ * @param expr - pointer to LanceDBExpr (consumed by this function; do not use or free after calling)
+ * @param error_message - optional pointer to receive detailed error message (NULL to ignore)
+ * @return Error code indicating success or failure
+ *
+ * If error_message is provided and an error occurs, the caller must free
+ * the error message with lancedb_free_string().
+ */
+LanceDBError lancedb_table_df_delete(
+    const LanceDBTable* table,
+    LanceDBExpr* expr,
+    char** error_message
+);
+
+/**
  * Create a new query for the given table
  *
  * @param table - pointer to LanceDBTable

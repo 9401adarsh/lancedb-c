@@ -650,6 +650,125 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Delete", "[table]") {
   lancedb_table_free(table);
 }
 
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table DF Delete", "[table]") {
+  const std::string table_name = "test_df_delete_table";
+  create_empty_table(table_name);
+
+  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
+  REQUIRE(table != nullptr);
+
+  constexpr auto row_num = 20;
+  auto initial_batch = create_test_record_batch(row_num, 0);
+  auto initial_reader = create_reader_from_batch(initial_batch);
+  REQUIRE(initial_reader != nullptr);
+
+  char* error_message = nullptr;
+  LanceDBError result = lancedb_table_add(table, initial_reader, &error_message);
+  REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(lancedb_table_count_rows(table) == row_num);
+
+  SECTION("Delete row matching expression") {
+    char* error_message = nullptr;
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_0"));
+    REQUIRE(expr != nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(table, expr, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_count_rows(table) == row_num - 1);
+  }
+
+  SECTION("Delete multiple rows with IN list") {
+    char* error_message = nullptr;
+    LanceDBExpr* col_expr = lancedb_expr_column("key");
+    LanceDBExpr* list_items[3];
+    list_items[0] = lancedb_expr_literal_string("key_0");
+    list_items[1] = lancedb_expr_literal_string("key_1");
+    list_items[2] = lancedb_expr_literal_string("key_2");
+
+    LanceDBExpr* in_expr = lancedb_expr_in_list(col_expr, list_items, 3, false, &error_message);
+    REQUIRE(in_expr != nullptr);
+    REQUIRE(error_message == nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(table, in_expr, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_count_rows(table) == row_num - 3);
+  }
+
+  SECTION("Delete multiple rows with OR expression") {
+    char* error_message = nullptr;
+    LanceDBExpr* or_expr = lancedb_expr_or(
+        lancedb_expr_binary(
+            lancedb_expr_column("key"),
+            LANCEDB_BINARY_OP_EQ,
+            lancedb_expr_literal_string("key_10")),
+        lancedb_expr_binary(
+            lancedb_expr_column("key"),
+            LANCEDB_BINARY_OP_EQ,
+            lancedb_expr_literal_string("key_11")));
+    REQUIRE(or_expr != nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(table, or_expr, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_count_rows(table) == row_num - 2);
+  }
+
+  SECTION("Delete with expression matching no rows") {
+    char* error_message = nullptr;
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("nonexistent"));
+    REQUIRE(expr != nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(table, expr, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_count_rows(table) == row_num);
+  }
+
+  SECTION("Delete all rows with IS NOT NULL") {
+    char* error_message = nullptr;
+    LanceDBExpr* expr = lancedb_expr_is_not_null(lancedb_expr_column("key"));
+    REQUIRE(expr != nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(table, expr, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_count_rows(table) == 0);
+  }
+
+  SECTION("Delete with null table should fail") {
+    char* error_message = nullptr;
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_0"));
+    REQUIRE(expr != nullptr);
+
+    LanceDBError result = lancedb_table_df_delete(nullptr, expr, &error_message);
+    REQUIRE(result == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Delete with null expr should fail") {
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_df_delete(table, nullptr, &error_message);
+    REQUIRE(result == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  lancedb_table_free(table);
+}
+
 TEST_CASE_METHOD(LanceDBFixture, "LanceDB Create Reader", "[table]") {
   constexpr auto row_num = 10;
   auto batch = create_test_record_batch(row_num, 0);

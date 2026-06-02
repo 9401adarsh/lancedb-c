@@ -21,6 +21,7 @@ use crate::error::{
     handle_error, set_invalid_argument_message, set_not_supported_message,
     set_unknown_error_message, LanceDBError,
 };
+use crate::expr::LanceDBExpr;
 use crate::types::{LanceDBMergeInsertConfig, LanceDBRecordBatchReader};
 
 /// Get table schema as Arrow C ABI
@@ -434,6 +435,42 @@ pub unsafe extern "C" fn lancedb_table_delete(
     let runtime = get_runtime();
 
     match runtime.block_on(tbl.delete(predicate_str)) {
+        Ok(_) => LanceDBError::Success,
+        Err(e) => handle_error(&e, error_message),
+    }
+}
+
+/// Delete rows from table using a DataFusion expression
+///
+/// # Safety
+/// - `table` must be a valid pointer returned from `lancedb_connection_open_table`
+/// - `expr` must be a valid pointer returned from `lancedb_expr_*` functions
+/// - `expr` is consumed by this function; do not use or free it after calling
+/// - `error_message` can be NULL to ignore detailed error messages
+///
+/// # Returns
+/// - Error code indicating success or failure
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_table_df_delete(
+    table: *const LanceDBTable,
+    expr: *mut LanceDBExpr,
+    error_message: *mut *mut c_char,
+) -> LanceDBError {
+    if expr.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
+    }
+
+    let expr_box = Box::from_raw(expr);
+
+    if table.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
+    }
+    let tbl = &(*table).inner;
+    let runtime = get_runtime();
+
+    match runtime.block_on(tbl.delete(&expr_box.inner)) {
         Ok(_) => LanceDBError::Success,
         Err(e) => handle_error(&e, error_message),
     }
