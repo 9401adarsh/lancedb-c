@@ -920,8 +920,10 @@ pub unsafe extern "C" fn lancedb_table_set_metadata(
     };
 
     match runtime.block_on(async {
-        let mut guard = ds.get_mut().await?;
-        guard.update_metadata(entries).await?;
+        ds.ensure_mutable()?;
+        let mut dataset = (*ds.get().await?).clone();
+        dataset.update_metadata(entries).await?;
+        ds.update(dataset);
         Ok::<_, lancedb::error::Error>(())
     }) {
         Ok(_) => LanceDBError::Success,
@@ -983,8 +985,10 @@ pub unsafe extern "C" fn lancedb_table_delete_metadata(
     };
 
     match runtime.block_on(async {
-        let mut guard = ds.get_mut().await?;
-        guard.update_metadata(entries).await?;
+        ds.ensure_mutable()?;
+        let mut dataset = (*ds.get().await?).clone();
+        dataset.update_metadata(entries).await?;
+        ds.update(dataset);
         Ok::<_, lancedb::error::Error>(())
     }) {
         Ok(_) => LanceDBError::Success,

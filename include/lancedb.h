@@ -100,7 +100,8 @@ typedef enum {
     LANCEDB_ARROW = 18,
     LANCEDB_NOT_SUPPORTED = 19,
     LANCEDB_OTHER = 20,
-    LANCEDB_UNKNOWN = 21
+    LANCEDB_NAMESPACE = 21,
+    LANCEDB_UNKNOWN = 22
 } LanceDBError;
 
 /**
@@ -128,6 +129,7 @@ static const char* LANCEDB_ERROR_MESSAGES[] = {
     "Arrow error",
     "Operation not supported",
     "Other error",
+    "Namespace error",
     "Unknown error"
 };
 
