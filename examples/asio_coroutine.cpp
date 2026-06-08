@@ -13,7 +13,10 @@
 #include <iostream>
 #include <array>
 #include <cstdlib>
+#include <memory>
 #include <numeric>
+#include <string>
+#include <vector>
 #include <arrow/api.h>
 #include <arrow/c/bridge.h>
 #include <boost/asio/io_context.hpp>
@@ -27,13 +30,13 @@
 #endif
 #include "lancedb.h"
 
-//constexpr size_t COROUTINE_STACK_SIZE = 512 * 1024;
+constexpr size_t COROUTINE_STACK_SIZE = 512 * 1024;
 // according to measurements, the following stack sizes are used by the different operations:
 // [upsert] merge_insert used ~552KB of stack
 // [delete] df_delete used ~377KB of stack
 // [delete_sql] delete used ~498KB of stack
 // [query] vector_query_execute used ~218KB of stack
-constexpr size_t COROUTINE_STACK_SIZE = 1024 * 1024;
+// however, since we allow the stack to grow dynamically, using 512KB should be sufficient
 
 constexpr size_t DIM = 8;
 
@@ -91,143 +94,167 @@ LanceDBRecordBatchReader* batch_to_reader(
 }
 
 void do_upsert(LanceDBTable* tbl, int num_vectors, boost::asio::yield_context /*yield*/) {
-  const int upsert_count = num_vectors / 2;
-  std::cout << "[upsert] building records (ids 0.." << upsert_count - 1
-            << " with updated vectors)" << std::endl;
-  std::vector<int32_t> upsert_ids(upsert_count);
-  std::iota(upsert_ids.begin(), upsert_ids.end(), 0);
-  auto batch = make_records(upsert_ids);
-  auto* reader = batch_to_reader(batch);
-  if (!reader) {
-    std::cerr << "[upsert] failed to create reader" << std::endl;
-    return;
+  try {
+    const int upsert_count = num_vectors / 2;
+    std::cout << "[upsert] building records (ids 0.." << upsert_count - 1
+              << " with updated vectors)" << std::endl;
+    std::vector<int32_t> upsert_ids(upsert_count);
+    std::iota(upsert_ids.begin(), upsert_ids.end(), 0);
+    auto batch = make_records(upsert_ids);
+    auto* reader = batch_to_reader(batch);
+    if (!reader) {
+      std::cerr << "[upsert] failed to create reader" << std::endl;
+      return;
+    }
+
+    std::array<const char*, 1> on_columns = {"id"};
+    const LanceDBMergeInsertConfig config{
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 1,
+    };
+
+    char* err = nullptr;
+    if (auto rc = lancedb_table_merge_insert(
+            tbl, reader, on_columns.data(), 1, &config, &err);
+        rc != LANCEDB_SUCCESS) {
+      std::cerr << "[upsert] error: " << lancedb_error_to_message(rc);
+      if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
+      std::cerr << std::endl;
+      return;
+    }
+
+    std::cout << "[upsert] done, row count = "
+              << lancedb_table_count_rows(tbl) << std::endl;
+  } catch (...) {
+    std::cerr << "[upsert] exception" << std::endl;
   }
-
-  std::array<const char*, 1> on_columns = {"id"};
-  const LanceDBMergeInsertConfig config{
-    .when_matched_update_all = 1,
-    .when_not_matched_insert_all = 1,
-  };
-
-  char* err = nullptr;
-  if (auto rc = lancedb_table_merge_insert(
-          tbl, reader, on_columns.data(), 1, &config, &err);
-      rc != LANCEDB_SUCCESS) {
-    std::cerr << "[upsert] error: " << lancedb_error_to_message(rc);
-    if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
-    std::cerr << std::endl;
-    return;
-  }
-
-  std::cout << "[upsert] done, row count = "
-            << lancedb_table_count_rows(tbl) << std::endl;
 }
 
 void do_delete(LanceDBTable* tbl, int num_vectors, boost::asio::yield_context /*yield*/) {
-  const int delete_count = num_vectors / 5;
-  const int start_id = num_vectors - delete_count;
+  try {
+    const int delete_count = num_vectors / 5;
+    const int start_id = num_vectors - delete_count;
 
-  std::vector<LanceDBExpr*> id_literals(delete_count);
-  for (int i = 0; i < delete_count; i++) {
-    id_literals[i] = lancedb_expr_literal_i64(start_id + i);
+    std::vector<LanceDBExpr*> id_literals(delete_count);
+    for (int i = 0; i < delete_count; i++) {
+      id_literals[i] = lancedb_expr_literal_i64(start_id + i);
+    }
+    auto* expr = lancedb_expr_in_list(
+        lancedb_expr_column("id"),
+        id_literals.data(), static_cast<size_t>(delete_count), false, nullptr);
+    if (!expr) {
+      std::cerr << "[delete] failed to build expression" << std::endl;
+      return;
+    }
+
+    std::cout << "[delete] deleting ids " << start_id << ".."
+              << num_vectors - 1 << std::endl;
+
+    char* err = nullptr;
+    if (auto rc = lancedb_table_df_delete(tbl, expr, &err);
+        rc != LANCEDB_SUCCESS) {
+      std::cerr << "[delete] error: " << lancedb_error_to_message(rc);
+      if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
+      std::cerr << std::endl;
+      return;
+    }
+
+    std::cout << "[delete] done, row count = "
+              << lancedb_table_count_rows(tbl) << std::endl;
+  } catch (...) {
+    std::cerr << "[delete] exception" << std::endl;
   }
-  auto* expr = lancedb_expr_in_list(
-      lancedb_expr_column("id"),
-      id_literals.data(), static_cast<size_t>(delete_count), false, nullptr);
-  if (!expr) {
-    std::cerr << "[delete] failed to build expression" << std::endl;
-    return;
-  }
-
-  std::cout << "[delete] deleting ids " << start_id << ".."
-            << num_vectors - 1 << std::endl;
-
-  char* err = nullptr;
-  if (auto rc = lancedb_table_df_delete(tbl, expr, &err);
-      rc != LANCEDB_SUCCESS) {
-    std::cerr << "[delete] error: " << lancedb_error_to_message(rc);
-    if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
-    std::cerr << std::endl;
-    return;
-  }
-
-  std::cout << "[delete] done, row count = "
-            << lancedb_table_count_rows(tbl) << std::endl;
 }
 
 void do_delete_sql(LanceDBTable* tbl, int num_vectors, boost::asio::yield_context /*yield*/) {
-  const int delete_count = num_vectors / 5;
-  const int start_id = num_vectors - delete_count;
+  try {
+    const int delete_count = num_vectors / 5;
+    const int start_id = num_vectors - delete_count;
 
-  std::string predicate = "id IN (";
-  for (int i = start_id; i < num_vectors; i++) {
-    if (i > start_id) predicate += ", ";
-    predicate += std::to_string(i);
+    std::string predicate = "id IN (";
+    for (int i = start_id; i < num_vectors; i++) {
+      if (i > start_id) predicate += ", ";
+      predicate += std::to_string(i);
+    }
+    predicate += ")";
+
+    std::cout << "[delete_sql] deleting ids " << start_id << ".."
+              << num_vectors - 1 << std::endl;
+
+    char* err = nullptr;
+    if (auto rc = lancedb_table_delete(tbl, predicate.c_str(), &err);
+        rc != LANCEDB_SUCCESS) {
+      std::cerr << "[delete_sql] error: " << lancedb_error_to_message(rc);
+      if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
+      std::cerr << std::endl;
+      return;
+    }
+
+    std::cout << "[delete_sql] done, row count = "
+              << lancedb_table_count_rows(tbl) << std::endl;
+  } catch (...) {
+    std::cerr << "[delete_sql] exception" << std::endl;
   }
-  predicate += ")";
-
-  std::cout << "[delete_sql] deleting ids " << start_id << ".."
-            << num_vectors - 1 << std::endl;
-
-  char* err = nullptr;
-  if (auto rc = lancedb_table_delete(tbl, predicate.c_str(), &err);
-      rc != LANCEDB_SUCCESS) {
-    std::cerr << "[delete_sql] error: " << lancedb_error_to_message(rc);
-    if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
-    std::cerr << std::endl;
-    return;
-  }
-
-  std::cout << "[delete_sql] done, row count = "
-            << lancedb_table_count_rows(tbl) << std::endl;
 }
 
 void do_query(LanceDBTable* tbl, boost::asio::yield_context /*yield*/) {
-  std::vector<float> query_vec(DIM);
-  for (size_t i = 0; i < DIM; i++) {
-    query_vec[i] = static_cast<float>(rand() % 100);
-  }
-
-  auto* vq = lancedb_vector_query_new(tbl, query_vec.data(), DIM);
-  if (!vq) {
-    std::cerr << "[query] failed to create vector query" << std::endl;
-    return;
-  }
-  lancedb_vector_query_limit(vq, 5, nullptr);
-
-  auto* result = lancedb_vector_query_execute(vq);
-  if (!result) {
-    std::cerr << "[query] execute failed" << std::endl;
-    return;
-  }
-
-  FFI_ArrowArray** arrays = nullptr;
-  FFI_ArrowSchema* schema = nullptr;
-  size_t count = 0;
-  char* err = nullptr;
-  if (auto rc = lancedb_query_result_to_arrow(result, &arrays, &schema, &count, &err);
-      rc != LANCEDB_SUCCESS) {
-    std::cerr << "[query] result_to_arrow error: " << lancedb_error_to_message(rc);
-    if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
-    std::cerr << std::endl;
-    return;
-  }
-
-  size_t total_rows = 0;
-  for (size_t i = 0; i < count; i++) {
-    auto imported = arrow::ImportRecordBatch(
-        reinterpret_cast<ArrowArray*>(arrays[i]),
-        reinterpret_cast<ArrowSchema*>(schema));
-    if (imported.ok()) {
-      total_rows += (*imported)->num_rows();
+  try {
+    std::vector<float> query_vec(DIM);
+    for (size_t i = 0; i < DIM; i++) {
+      query_vec[i] = static_cast<float>(rand() % 100);
     }
+
+    auto* vq = lancedb_vector_query_new(tbl, query_vec.data(), DIM);
+    if (!vq) {
+      std::cerr << "[query] failed to create vector query" << std::endl;
+      return;
+    }
+    lancedb_vector_query_limit(vq, 5, nullptr);
+
+    auto* result = lancedb_vector_query_execute(vq);
+    if (!result) {
+      std::cerr << "[query] execute failed" << std::endl;
+      return;
+    }
+
+    FFI_ArrowArray** arrays = nullptr;
+    FFI_ArrowSchema* schema = nullptr;
+    size_t count = 0;
+    char* err = nullptr;
+    if (auto rc = lancedb_query_result_to_arrow(result, &arrays, &schema, &count, &err);
+        rc != LANCEDB_SUCCESS) {
+      std::cerr << "[query] result_to_arrow error: " << lancedb_error_to_message(rc);
+      if (err) { std::cerr << " — " << err; lancedb_free_string(err); }
+      std::cerr << std::endl;
+      return;
+    }
+
+    auto imported_schema = arrow::ImportSchema(
+        reinterpret_cast<ArrowSchema*>(schema));
+    lancedb_free_arrow_schema(schema);
+    if (!imported_schema.ok()) {
+      std::cerr << "[query] failed to import schema" << std::endl;
+      if (arrays) lancedb_free_arrow_arrays(arrays, count);
+      return;
+    }
+
+    size_t total_rows = 0;
+    for (size_t i = 0; i < count; i++) {
+      auto imported = arrow::ImportRecordBatch(
+          reinterpret_cast<ArrowArray*>(arrays[i]),
+          *imported_schema);
+      if (imported.ok()) {
+        total_rows += (*imported)->num_rows();
+      }
+    }
+
+    if (arrays) lancedb_free_arrow_arrays(arrays, count);
+
+    std::cout << "[query] found " << total_rows << " rows in "
+              << count << " batches" << std::endl;
+  } catch (...) {
+    std::cerr << "[query] exception" << std::endl;
   }
-
-  if (schema) lancedb_free_arrow_schema(schema);
-  if (arrays) lancedb_free_arrow_arrays(arrays, count);
-
-  std::cout << "[query] found " << total_rows << " rows in "
-            << count << " batches" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -259,13 +286,23 @@ int main(int argc, char* argv[]) {
   auto initial = make_records(initial_ids);
   struct ArrowSchema c_schema;
   struct ArrowArray c_array;
-  arrow::ExportRecordBatch(*initial, &c_array, &c_schema).ok();
+  if (!arrow::ExportRecordBatch(*initial, &c_array, &c_schema).ok()) {
+    std::cerr << "ExportRecordBatch failed" << std::endl;
+    lancedb_connection_free(db);
+    return 1;
+  }
 
   LanceDBRecordBatchReader* init_reader = nullptr;
-  lancedb_record_batch_reader_from_arrow(
-      reinterpret_cast<FFI_ArrowArray*>(&c_array),
-      reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
-      &init_reader, nullptr);
+  if (lancedb_record_batch_reader_from_arrow(
+          reinterpret_cast<FFI_ArrowArray*>(&c_array),
+          reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
+          &init_reader, nullptr) != LANCEDB_SUCCESS) {
+    std::cerr << "record_batch_reader_from_arrow failed" << std::endl;
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+    lancedb_connection_free(db);
+    return 1;
+  }
 
   LanceDBTable* tbl = nullptr;
   if (lancedb_table_create(db, "demo",
@@ -289,7 +326,27 @@ int main(int argc, char* argv[]) {
 
   boost::asio::spawn(io, std::allocator_arg, stack_alloc,
     [tbl, num_vectors](boost::asio::yield_context yield) {
-      do_upsert(tbl, num_vectors, yield);
+      std::cout << "--- shared stack (single lancedb_run_on_stack) ---" << std::endl;
+      struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+      Ctx ctx{tbl, num_vectors, &yield};
+      lancedb_run_on_stack([](void* p) {
+        auto* c = static_cast<Ctx*>(p);
+        do_upsert(c->tbl, c->n, *c->y);
+        do_delete(c->tbl, c->n, *c->y);
+        do_delete_sql(c->tbl, c->n, *c->y);
+        do_query(c->tbl, *c->y);
+      }, &ctx, 512 * 1024, 1024 * 1024);
+    }, boost::asio::detached);
+
+  boost::asio::spawn(io, std::allocator_arg, stack_alloc,
+    [tbl, num_vectors](boost::asio::yield_context yield) {
+      std::cout << "--- per-operation coroutines (selective wrapping) ---" << std::endl;
+      struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+      Ctx ctx{tbl, num_vectors, &yield};
+      lancedb_run_on_stack([](void* p) {
+        auto* c = static_cast<Ctx*>(p);
+        do_upsert(c->tbl, c->n, *c->y);
+      }, &ctx, 512 * 1024, 1024 * 1024);
     }, boost::asio::detached);
 
   boost::asio::spawn(io, std::allocator_arg, stack_alloc,
@@ -299,7 +356,12 @@ int main(int argc, char* argv[]) {
 
   boost::asio::spawn(io, std::allocator_arg, stack_alloc,
     [tbl, num_vectors](boost::asio::yield_context yield) {
-      do_delete_sql(tbl, num_vectors, yield);
+      struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+      Ctx ctx{tbl, num_vectors, &yield};
+      lancedb_run_on_stack([](void* p) {
+        auto* c = static_cast<Ctx*>(p);
+        do_delete_sql(c->tbl, c->n, *c->y);
+      }, &ctx, 512 * 1024, 1024 * 1024);
     }, boost::asio::detached);
 
   boost::asio::spawn(io, std::allocator_arg, stack_alloc,
@@ -310,7 +372,26 @@ int main(int argc, char* argv[]) {
   boost::coroutines::attributes attrs(COROUTINE_STACK_SIZE);
 
   boost::asio::spawn(io, [tbl, num_vectors](boost::asio::yield_context yield) {
-    do_upsert(tbl, num_vectors, yield);
+    std::cout << "--- shared stack (single lancedb_run_on_stack) ---" << std::endl;
+    struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+    Ctx ctx{tbl, num_vectors, &yield};
+    lancedb_run_on_stack([](void* p) {
+      auto* c = static_cast<Ctx*>(p);
+      do_upsert(c->tbl, c->n, *c->y);
+      do_delete(c->tbl, c->n, *c->y);
+      do_delete_sql(c->tbl, c->n, *c->y);
+      do_query(c->tbl, *c->y);
+    }, &ctx, 512 * 1024, 1024 * 1024);
+  }, attrs);
+
+  boost::asio::spawn(io, [tbl, num_vectors](boost::asio::yield_context yield) {
+    std::cout << "--- per-operation coroutines (selective wrapping) ---" << std::endl;
+    struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+    Ctx ctx{tbl, num_vectors, &yield};
+    lancedb_run_on_stack([](void* p) {
+      auto* c = static_cast<Ctx*>(p);
+      do_upsert(c->tbl, c->n, *c->y);
+    }, &ctx, 512 * 1024, 1024 * 1024);
   }, attrs);
 
   boost::asio::spawn(io, [tbl, num_vectors](boost::asio::yield_context yield) {
@@ -318,7 +399,12 @@ int main(int argc, char* argv[]) {
   }, attrs);
 
   boost::asio::spawn(io, [tbl, num_vectors](boost::asio::yield_context yield) {
-    do_delete_sql(tbl, num_vectors, yield);
+    struct Ctx { LanceDBTable* tbl; int n; boost::asio::yield_context* y; };
+    Ctx ctx{tbl, num_vectors, &yield};
+    lancedb_run_on_stack([](void* p) {
+      auto* c = static_cast<Ctx*>(p);
+      do_delete_sql(c->tbl, c->n, *c->y);
+    }, &ctx, 512 * 1024, 1024 * 1024);
   }, attrs);
 
   boost::asio::spawn(io, [tbl](boost::asio::yield_context yield) {

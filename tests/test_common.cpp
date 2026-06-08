@@ -128,10 +128,10 @@ LanceDBRecordBatchReader* create_reader_from_batch(const std::shared_ptr<arrow::
   REQUIRE(arrow::ExportRecordBatch(*batch, &c_array, &c_schema).ok());
 
   LanceDBRecordBatchReader* reader;
-  lancedb_record_batch_reader_from_arrow(
+  REQUIRE(lancedb_record_batch_reader_from_arrow(
       reinterpret_cast<FFI_ArrowArray*>(&c_array),
       reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
-      &reader, nullptr);
+      &reader, nullptr) == LANCEDB_SUCCESS);
 
   // Schema is only read by the function, so we must release it
   if (c_schema.release) {
