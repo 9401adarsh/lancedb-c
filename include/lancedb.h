@@ -100,7 +100,8 @@ typedef enum {
     LANCEDB_ARROW = 18,
     LANCEDB_NOT_SUPPORTED = 19,
     LANCEDB_OTHER = 20,
-    LANCEDB_UNKNOWN = 21
+    LANCEDB_NAMESPACE = 21,
+    LANCEDB_UNKNOWN = 22
 } LanceDBError;
 
 /**
@@ -128,6 +129,7 @@ static const char* LANCEDB_ERROR_MESSAGES[] = {
     "Arrow error",
     "Operation not supported",
     "Other error",
+    "Namespace error",
     "Unknown error"
 };
 
@@ -785,6 +787,23 @@ LanceDBError lancedb_table_merge_insert(
 LanceDBError lancedb_table_delete(
     const LanceDBTable* table,
     const char* predicate,
+    char** error_message
+);
+
+/**
+ * Delete rows from table using a DataFusion expression
+ *
+ * @param table - pointer to LanceDBTable
+ * @param expr - pointer to LanceDBExpr (consumed by this function; do not use or free after calling)
+ * @param error_message - optional pointer to receive detailed error message (NULL to ignore)
+ * @return Error code indicating success or failure
+ *
+ * If error_message is provided and an error occurs, the caller must free
+ * the error message with lancedb_free_string().
+ */
+LanceDBError lancedb_table_df_delete(
+    const LanceDBTable* table,
+    LanceDBExpr* expr,
     char** error_message
 );
 

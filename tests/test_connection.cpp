@@ -459,9 +459,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Namespaces", "[connection]") {
   char* error_message = nullptr;
   const char* _namespace = "myspace";
   auto result = lancedb_connection_create_namespace(db, _namespace, &error_message);
-  REQUIRE(error_message != nullptr);
-  REQUIRE(result == LANCEDB_NOT_SUPPORTED);
-  lancedb_free_string(error_message);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(result == LANCEDB_SUCCESS);
 
   SECTION("List Namespaces") {
     char* error_message = nullptr;
@@ -472,11 +471,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Namespaces", "[connection]") {
         &names_out,
         &count_out,
         &error_message);
-    REQUIRE(error_message != nullptr);
-    REQUIRE(result == LANCEDB_NOT_SUPPORTED);
-    REQUIRE(count_out == 0);
-    REQUIRE(names_out == nullptr);
-    lancedb_free_string(error_message);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(result == LANCEDB_SUCCESS);
     lancedb_free_namespace_list(names_out, count_out);
   }
   SECTION("Drop Namespace") {
@@ -484,8 +480,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Namespaces", "[connection]") {
     auto result = lancedb_connection_drop_namespace(db,
         _namespace,
         &error_message);
-    REQUIRE(error_message != nullptr);
-    REQUIRE(result == LANCEDB_NOT_SUPPORTED);
-    lancedb_free_string(error_message);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(result == LANCEDB_SUCCESS);
   }
 }

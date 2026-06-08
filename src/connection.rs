@@ -11,8 +11,10 @@ use std::sync::OnceLock;
 
 use arrow_array::{RecordBatch, RecordBatchIterator, RecordBatchReader};
 use arrow_schema::Schema;
+use lance_namespace::models::{
+    CreateNamespaceRequest, DropNamespaceRequest, ListNamespacesRequest,
+};
 use lancedb::connection::{connect, ConnectBuilder, Connection, TableNamesBuilder};
-use lancedb::database::{CreateNamespaceRequest, DropNamespaceRequest, ListNamespacesRequest};
 use lancedb::Table;
 
 use crate::error::{
@@ -945,9 +947,8 @@ pub unsafe extern "C" fn lancedb_connection_create_namespace(
     let conn = &(*connection).inner;
     let runtime = get_runtime();
 
-    let request = CreateNamespaceRequest {
-        namespace: vec![namespace_str.to_string()],
-    };
+    let mut request = CreateNamespaceRequest::new();
+    request.id = Some(vec![namespace_str.to_string()]);
     match runtime.block_on(conn.create_namespace(request)) {
         Ok(_) => LanceDBError::Success,
         Err(e) => handle_error(&e, error_message),
@@ -982,9 +983,8 @@ pub unsafe extern "C" fn lancedb_connection_drop_namespace(
     let conn = &(*connection).inner;
     let runtime = get_runtime();
 
-    let request = DropNamespaceRequest {
-        namespace: vec![namespace_str.to_string()],
-    };
+    let mut request = DropNamespaceRequest::new();
+    request.id = Some(vec![namespace_str.to_string()]);
     match runtime.block_on(conn.drop_namespace(request)) {
         Ok(_) => LanceDBError::Success,
         Err(e) => handle_error(&e, error_message),
@@ -1029,13 +1029,11 @@ pub unsafe extern "C" fn lancedb_connection_list_namespaces(
     let conn = &(*connection).inner;
     let runtime = get_runtime();
 
-    let request = ListNamespacesRequest {
-        namespace: parent_namespace,
-        page_token: None,
-        limit: None,
-    };
+    let mut request = ListNamespacesRequest::new();
+    request.id = Some(parent_namespace);
     match runtime.block_on(conn.list_namespaces(request)) {
-        Ok(namespaces) => {
+        Ok(response) => {
+            let namespaces = response.namespaces;
             let count = namespaces.len();
             *count_out = count;
 

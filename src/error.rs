@@ -32,7 +32,8 @@ pub enum LanceDBError {
     Arrow = 18,
     NotSupported = 19,
     Other = 20,
-    Unknown = 21,
+    Namespace = 21,
+    Unknown = 22,
 }
 
 /// Convert Rust Error to C error code
@@ -53,12 +54,16 @@ pub(crate) fn error_to_error_code(error: &lancedb::error::Error) -> LanceDBError
         lancedb::error::Error::Runtime { .. } => LanceDBError::Runtime,
         lancedb::error::Error::Timeout { .. } => LanceDBError::Timeout,
         lancedb::error::Error::ObjectStore { .. } => LanceDBError::ObjectStore,
-        lancedb::error::Error::Lance { .. } => LanceDBError::Lance,
+        lancedb::error::Error::Lance { source } => match source {
+            lance::Error::Namespace { .. } => LanceDBError::Namespace,
+            _ => LanceDBError::Lance,
+        },
         lancedb::error::Error::Http { .. } => LanceDBError::Http,
         lancedb::error::Error::Retry { .. } => LanceDBError::Retry,
         lancedb::error::Error::Arrow { .. } => LanceDBError::Arrow,
         lancedb::error::Error::NotSupported { .. } => LanceDBError::NotSupported,
         lancedb::error::Error::Other { .. } => LanceDBError::Other,
+        lancedb::error::Error::External { .. } => LanceDBError::Other,
     }
 }
 
