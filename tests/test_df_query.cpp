@@ -320,6 +320,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DataFusion Expr Filter", "[que
         query_result, &result_arrays, &result_schema, &count, &error_message);
 
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 0);
     REQUIRE(result_arrays == nullptr);
     REQUIRE(result_schema == nullptr);
@@ -522,6 +523,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr Type Mismatches", "[query
       reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
       reader, &table, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(table != nullptr);
   if (c_schema.release) {
     c_schema.release(&c_schema);
@@ -746,6 +748,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr Type Mismatches", "[query
     result = lancedb_query_result_to_arrow(
         query_result, &result_arrays, &result_schema, &count, &error_message);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 1);
 
     // Import into Arrow RecordBatch to inspect the key value
@@ -799,6 +802,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr Type Mismatches", "[query
     result = lancedb_query_result_to_arrow(
         query_result, &result_arrays, &result_schema, &count, &error_message);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     // Constant false filter: no rows returned
     REQUIRE(count == 0);
   }
@@ -893,6 +897,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
       reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
       reader, &table, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(table != nullptr);
   if (c_schema.release) {
     c_schema.release(&c_schema);
@@ -914,8 +919,10 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     const char* columns[] = {"key", "tags"};
     result = lancedb_query_select(query, columns, 2, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     result = lancedb_query_df_filter(query, has_expr, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
 
     LanceDBQueryResult* query_result = lancedb_query_execute(query);
     REQUIRE(query_result != nullptr);
@@ -926,6 +933,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     result = lancedb_query_result_to_arrow(
         query_result, &result_arrays, &result_schema, &count, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     REQUIRE(count > 0);
 
     size_t total_rows = 0;
@@ -954,8 +962,10 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     const char* columns[] = {"key", "tags"};
     result = lancedb_query_select(query, columns, 2, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     result = lancedb_query_df_filter(query, has_expr, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
 
     LanceDBQueryResult* query_result = lancedb_query_execute(query);
     REQUIRE(query_result != nullptr);
@@ -966,6 +976,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     result = lancedb_query_result_to_arrow(
         query_result, &result_arrays, &result_schema, &count, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     REQUIRE(count == 0);
   }
 
@@ -994,8 +1005,10 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     const char* columns[] = {"key", "tags"};
     result = lancedb_query_select(query, columns, 2, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     result = lancedb_query_df_filter(query, and_expr, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
 
     LanceDBQueryResult* query_result = lancedb_query_execute(query);
     REQUIRE(query_result != nullptr);
@@ -1006,6 +1019,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     result = lancedb_query_result_to_arrow(
         query_result, &result_arrays, &result_schema, &count, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     REQUIRE(count > 0);
 
     size_t total_rows = 0;
@@ -1034,8 +1048,10 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr array_has filter", "[quer
     const char* columns[] = {"key", "tags"};
     result = lancedb_query_select(query, columns, 2, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
     result = lancedb_query_df_filter(query, has_expr, &err);
     REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(err == nullptr);
 
     LanceDBQueryResult* query_result = lancedb_query_execute(query);
     REQUIRE(query_result == nullptr);
@@ -1102,6 +1118,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DF filter + JSON post-filter o
       reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
       reader, &table, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(table != nullptr);
   if (c_schema.release) {
     c_schema.release(&c_schema);
@@ -1126,8 +1143,10 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DF filter + JSON post-filter o
   const char* columns[] = {"key", "metadata"};
   result = lancedb_query_select(query, columns, 2, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   result = lancedb_query_df_filter(query, df_filter, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
 
   LanceDBQueryResult* query_result = lancedb_query_execute(query);
   REQUIRE(query_result != nullptr);
@@ -1139,6 +1158,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DF filter + JSON post-filter o
   result = lancedb_query_result_to_arrow(
       query_result, &result_arrays, &result_schema, &count, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count > 0);
 
   // JSON post-filter: color = "red" AND priority > 1

@@ -84,6 +84,7 @@ TEST_CASE("JSON matches - integer comparison", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -116,6 +117,7 @@ TEST_CASE("JSON matches - float comparison", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -148,6 +150,7 @@ TEST_CASE("JSON matches - boolean", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -176,6 +179,7 @@ TEST_CASE("JSON matches - json_contains", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -249,6 +253,7 @@ TEST_CASE("JSON matches - json_array_has no match", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == false);
   REQUIRE(results[1] == false);
@@ -284,6 +289,7 @@ TEST_CASE("JSON matches - json_array_has nested path", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -438,6 +444,7 @@ TEST_CASE("JSON matches - json_array_has type mismatch", "[json]") {
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   // Cast produces "true" which doesn't match "1", "2", etc. - no error, just no matches
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == false);
   REQUIRE(results[1] == false);
@@ -475,6 +482,7 @@ TEST_CASE("JSON matches - json_array_has wrong quote flag", "[json]") {
         arrays, ffi_schema, 1, expr, &results, &count, &error_message);
     // Quoting wraps value as '"42"' but array elements are '42' - no match
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 2);
     REQUIRE(results[0] == false);
     REQUIRE(results[1] == false);
@@ -550,6 +558,7 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 2);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == false);
@@ -561,7 +570,7 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
 
   SECTION("Array of JSON objects - whitespace mismatch") {
     const char* path[] = {"items"};
-    // Extra space after colon — semantically identical JSON, but won't match
+    // Extra space after colon - semantically identical JSON, but won't match
     LanceDBExpr* expr = lancedb_expr_json_array_has(
         lancedb_expr_column(JSON_COL), path, 1,
         lancedb_expr_literal_string(R"({"name": "alice"})"),
@@ -585,8 +594,9 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 2);
-    // No match despite semantically equivalent JSON — raw string comparison
+    // No match despite semantically equivalent JSON - raw string comparison
     REQUIRE(results[0] == false);
     REQUIRE(results[1] == false);
     lancedb_free_json_matches(results);
@@ -620,6 +630,7 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 2);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == false);
@@ -631,7 +642,7 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
 
   SECTION("Array of arrays - reorder mismatch") {
     const char* path[] = {"matrix"};
-    // Extra space after comma — semantically identical, but won't match
+    // Same numbers but different order: semantically identical JSON - but won't match
     LanceDBExpr* expr = lancedb_expr_json_array_has(
         lancedb_expr_column(JSON_COL), path, 1,
         lancedb_expr_literal_string("[2,1]"),
@@ -655,8 +666,9 @@ TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 2);
-    // No match despite semantically equivalent JSON — raw string comparison
+    // No match despite semantically equivalent JSON - raw string comparison
     REQUIRE(results[0] == false);
     REQUIRE(results[1] == false);
     lancedb_free_json_matches(results);
@@ -730,6 +742,7 @@ TEST_CASE("JSON matches - compound expression", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, and_expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 3);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == false);
@@ -750,6 +763,7 @@ TEST_CASE("JSON matches - compound expression", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, or_expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 3);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == true);
@@ -913,6 +927,7 @@ TEST_CASE("JSON matches - json_get on literal instead of column", "[json]") {
   // return true for every row since the literal contains name=alice,
   // regardless of the actual row data
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == true);
@@ -1088,6 +1103,7 @@ TEST_CASE("JSON matches - multiple batches", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 2, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 5);
   // batch1: 10>5=true, 2>5=false; batch2: 3>5=false, 8>5=true, 6>5=true
   REQUIRE(results[0] == true);
@@ -1122,6 +1138,7 @@ TEST_CASE("JSON matches - arrays still valid after call", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(results[0] == true);
   lancedb_free_json_matches(results);
 
@@ -1164,6 +1181,7 @@ TEST_CASE("JSON matches - invalid JSON input", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 5);
   // Only the valid JSON with name=alice should match
   REQUIRE(results[0] == false);
@@ -1204,6 +1222,7 @@ TEST_CASE("JSON matches - invalid nested JSON input", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   // Row 0: nested value is broken, but top-level "name" is extracted before the
   // parser reaches the malformed part — match
@@ -1244,6 +1263,7 @@ TEST_CASE("JSON matches - nested string extraction", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -1280,6 +1300,7 @@ TEST_CASE("JSON matches - nested integer extraction", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -1316,6 +1337,7 @@ TEST_CASE("JSON matches - deeply nested path", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -1349,6 +1371,7 @@ TEST_CASE("JSON matches - nested json_contains", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
