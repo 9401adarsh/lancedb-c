@@ -1726,6 +1726,24 @@ LanceDBExpr* lancedb_expr_in_list(
 );
 
 /**
+ * Create an array_has expression: check if an array column contains a value
+ *
+ * Returns a boolean expression that is true when the array contains the element.
+ *
+ * @param array_expr - pointer to LanceDBExpr for the array column (consumed)
+ * @param value_expr - pointer to LanceDBExpr for the value to search for (consumed)
+ * @param error_message - optional pointer to receive detailed error message (NULL to ignore)
+ * @return Non-null pointer to LanceDBExpr on success, NULL on failure
+ *         Both inputs are consumed; do not use or free them after calling
+ *         Caller must free result with lancedb_expr_free()
+ */
+LanceDBExpr* lancedb_expr_array_has(
+    LanceDBExpr* array_expr,
+    LanceDBExpr* value_expr,
+    char** error_message
+);
+
+/**
  * Clone an expression (creates an independent copy)
  *
  * @param expr - pointer to LanceDBExpr to clone (not consumed)
@@ -1816,6 +1834,29 @@ LanceDBExpr* lancedb_expr_json_get_bool(LanceDBExpr* json_expr, const char* cons
  *         Caller must free result with lancedb_expr_free()
  */
 LanceDBExpr* lancedb_expr_json_contains(LanceDBExpr* json_expr, const char* const* path, size_t path_len);
+
+/**
+ * Create a json_array_has expression: check if a JSON array contains a value
+ *
+ * Navigates to a JSON array field using the path, then checks whether the given
+ * value expression appears as an element. The quote_value flag controls how the
+ * value is adapted:
+ * - true: for JSON string arrays: value is wrapped in JSON quotes for matching.
+ * - false: for JSON number/boolean arrays: value is cast to Utf8.
+ *
+ * For arrays of non-scalar values (objects, nested arrays), it falls
+ * back to exact string matching against the raw JSON text, which is not JSON-aware
+ *
+ * @param json_expr - pointer to LanceDBExpr for the JSON column (consumed)
+ * @param path - array of null-terminated C strings forming the JSON path to the array
+ * @param path_len - number of path segments
+ * @param value_expr - pointer to LanceDBExpr for the value to search for (consumed)
+ * @param quote_value - true for string arrays, false for number/boolean arrays
+ * @return Non-null pointer to LanceDBExpr on success, NULL on failure
+ *         Both json_expr and value_expr are consumed; do not use or free them after calling.
+ *         Caller must free result with lancedb_expr_free()
+ */
+LanceDBExpr* lancedb_expr_json_array_has(LanceDBExpr* json_expr, const char* const* path, size_t path_len, LanceDBExpr* value_expr, bool quote_value);
 
 /**
  * Evaluate a JSON filter expression against Arrow RecordBatches.

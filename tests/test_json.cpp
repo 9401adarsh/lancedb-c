@@ -84,6 +84,7 @@ TEST_CASE("JSON matches - integer comparison", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -116,6 +117,7 @@ TEST_CASE("JSON matches - float comparison", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -148,6 +150,7 @@ TEST_CASE("JSON matches - boolean", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -176,6 +179,7 @@ TEST_CASE("JSON matches - json_contains", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 2);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -183,6 +187,519 @@ TEST_CASE("JSON matches - json_contains", "[json]") {
 
   if (c_array.release) c_array.release(&c_array);
   if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has", "[json]") {
+  const char* path[] = {"tags"};
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      lancedb_expr_literal_string("red"),
+      true);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"tags":["red","blue"]})",
+    R"({"tags":["green"]})",
+    R"({"tags":["red","green","blue"]})",
+    R"({"tags":["yellow"]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 4);
+  REQUIRE(results[0] == true);
+  REQUIRE(results[1] == false);
+  REQUIRE(results[2] == true);
+  REQUIRE(results[3] == false);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has no match", "[json]") {
+  const char* path[] = {"tags"};
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      lancedb_expr_literal_string("purple"),
+      true);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"tags":["red","blue"]})",
+    R"({"tags":["green"]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 2);
+  REQUIRE(results[0] == false);
+  REQUIRE(results[1] == false);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has nested path", "[json]") {
+  const char* path[] = {"meta", "tags"};
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 2,
+      lancedb_expr_literal_string("important"),
+      true);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"meta":{"tags":["important","urgent"]}})",
+    R"({"meta":{"tags":["low"]}})",
+    R"({"meta":{"tags":[]}})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 3);
+  REQUIRE(results[0] == true);
+  REQUIRE(results[1] == false);
+  REQUIRE(results[2] == false);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has number array", "[json]") {
+  const char* path[] = {"scores"};
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      lancedb_expr_literal_f64(3.14),
+      false);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"scores":[1.5, 3.14, 2.7]})",
+    R"({"scores":[10, 20]})",
+    R"({"scores":[3.14]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 3);
+  REQUIRE(results[0] == true);
+  REQUIRE(results[1] == false);
+  REQUIRE(results[2] == true);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has bool array", "[json]") {
+  const char* path[] = {"flags"};
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      lancedb_expr_literal_bool(true),
+      false);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"flags":[true, false]})",
+    R"({"flags":[false]})",
+    R"({"flags":[true]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 3);
+  REQUIRE(results[0] == true);
+  REQUIRE(results[1] == false);
+  REQUIRE(results[2] == true);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has non-literal value expr", "[json]") {
+  const char* path[] = {"flags"};
+  // Non-literal value: false OR true evaluates to true
+  LanceDBExpr* value_expr = lancedb_expr_or(
+      lancedb_expr_literal_bool(false),
+      lancedb_expr_literal_bool(true));
+  REQUIRE(value_expr != nullptr);
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      value_expr,
+      false);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"flags":[true, false]})",
+    R"({"flags":[false]})",
+    R"({"flags":[true]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 3);
+  // false OR true = true; rows containing true match
+  REQUIRE(results[0] == true);
+  REQUIRE(results[1] == false);
+  REQUIRE(results[2] == true);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has type mismatch", "[json]") {
+  const char* path[] = {"scores"};
+  // Boolean value against a number array
+  LanceDBExpr* expr = lancedb_expr_json_array_has(
+      lancedb_expr_column(JSON_COL), path, 1,
+      lancedb_expr_literal_bool(true),
+      false);
+  REQUIRE(expr != nullptr);
+
+  ArrowArray c_array;
+  ArrowSchema c_schema;
+  export_json_batch({
+    R"({"scores":[1, 2, 3]})",
+    R"({"scores":[10, 20]})",
+  }, JSON_COL, &c_array, &c_schema);
+
+  auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+  auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+  FFI_ArrowArray* arrays[] = {ffi_array};
+
+  bool* results = nullptr;
+  size_t count = 0;
+  char* error_message = nullptr;
+  LanceDBError err = lancedb_json_matches(
+      arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+  // Cast produces "true" which doesn't match "1", "2", etc. - no error, just no matches
+  REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 2);
+  REQUIRE(results[0] == false);
+  REQUIRE(results[1] == false);
+  lancedb_free_json_matches(results);
+
+  if (c_array.release) c_array.release(&c_array);
+  if (c_schema.release) c_schema.release(&c_schema);
+}
+
+TEST_CASE("JSON matches - json_array_has wrong quote flag", "[json]") {
+  SECTION("Quoting number against number array") {
+    const char* path[] = {"scores"};
+    // quote_value=true wraps value in JSON quotes
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_i64(42),
+        true);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"scores":[42, 10]})",
+      R"({"scores":[42]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    // Quoting wraps value as '"42"' but array elements are '42' - no match
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 2);
+    REQUIRE(results[0] == false);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+
+  SECTION("Not quoting string against string array") {
+    const char* path[] = {"tags"};
+    // quote_value=false casts to Utf8 - wrong for string arrays
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_string("red"),
+        false);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"tags":["red","blue"]})",
+      R"({"tags":["red"]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    // Cast keeps 'red' but elements are '"red"' (with JSON quotes) - no match
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(count == 2);
+    REQUIRE(results[0] == false);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+}
+
+TEST_CASE("JSON matches - json_array_has non-scalar elements", "[json]") {
+  // Non-scalar array elements use exact string matching against raw JSON text,
+  // not JSON-aware comparison. Whitespace or key ordering differences cause mismatches.
+
+  SECTION("Array of JSON objects - exact match") {
+    const char* path[] = {"items"};
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_string(R"({"name":"alice"})"),
+        false);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"items":[{"name":"alice"},{"name":"bob"}]})",
+      R"({"items":[{"name":"carol"}]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 2);
+    REQUIRE(results[0] == true);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+
+  SECTION("Array of JSON objects - whitespace mismatch") {
+    const char* path[] = {"items"};
+    // Extra space after colon - semantically identical JSON, but won't match
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_string(R"({"name": "alice"})"),
+        false);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"items":[{"name":"alice"},{"name":"bob"}]})",
+      R"({"items":[{"name":"carol"}]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 2);
+    // No match despite semantically equivalent JSON - raw string comparison
+    REQUIRE(results[0] == false);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+
+  SECTION("Array of arrays - exact match") {
+    const char* path[] = {"matrix"};
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_string("[1,2]"),
+        false);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"matrix":[[1,2],[3,4]]})",
+      R"({"matrix":[[5,6]]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 2);
+    REQUIRE(results[0] == true);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+
+  SECTION("Array of arrays - reorder mismatch") {
+    const char* path[] = {"matrix"};
+    // Same numbers but different order: semantically identical JSON - but won't match
+    LanceDBExpr* expr = lancedb_expr_json_array_has(
+        lancedb_expr_column(JSON_COL), path, 1,
+        lancedb_expr_literal_string("[2,1]"),
+        false);
+    REQUIRE(expr != nullptr);
+
+    ArrowArray c_array;
+    ArrowSchema c_schema;
+    export_json_batch({
+      R"({"matrix":[[1,2],[3,4]]})",
+      R"({"matrix":[[5,6]]})",
+    }, JSON_COL, &c_array, &c_schema);
+
+    auto* ffi_array = reinterpret_cast<FFI_ArrowArray*>(&c_array);
+    auto* ffi_schema = reinterpret_cast<FFI_ArrowSchema*>(&c_schema);
+    FFI_ArrowArray* arrays[] = {ffi_array};
+
+    bool* results = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+    LanceDBError err = lancedb_json_matches(
+        arrays, ffi_schema, 1, expr, &results, &count, &error_message);
+    REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 2);
+    // No match despite semantically equivalent JSON - raw string comparison
+    REQUIRE(results[0] == false);
+    REQUIRE(results[1] == false);
+    lancedb_free_json_matches(results);
+
+    if (c_array.release) c_array.release(&c_array);
+    if (c_schema.release) c_schema.release(&c_schema);
+  }
+}
+
+TEST_CASE("JSON expr builders - json_array_has null arguments", "[json]") {
+  const char* path[] = {"tags"};
+
+  SECTION("Null json_expr") {
+    REQUIRE(lancedb_expr_json_array_has(nullptr, path, 1,
+        lancedb_expr_literal_string("red"), true) == nullptr);
+  }
+
+  SECTION("Null path") {
+    REQUIRE(lancedb_expr_json_array_has(lancedb_expr_column(JSON_COL), nullptr, 1,
+        lancedb_expr_literal_string("red"), true) == nullptr);
+  }
+
+  SECTION("Zero path_len") {
+    REQUIRE(lancedb_expr_json_array_has(lancedb_expr_column(JSON_COL), path, 0,
+        lancedb_expr_literal_string("red"), true) == nullptr);
+  }
+
+  SECTION("Null value_expr") {
+    REQUIRE(lancedb_expr_json_array_has(lancedb_expr_column(JSON_COL), path, 1,
+        nullptr, true) == nullptr);
+  }
 }
 
 TEST_CASE("JSON matches - compound expression", "[json]") {
@@ -225,6 +742,7 @@ TEST_CASE("JSON matches - compound expression", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, and_expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 3);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == false);
@@ -245,6 +763,7 @@ TEST_CASE("JSON matches - compound expression", "[json]") {
     LanceDBError err = lancedb_json_matches(
         arrays, ffi_schema, 1, or_expr, &results, &count, &error_message);
     REQUIRE(err == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
     REQUIRE(count == 3);
     REQUIRE(results[0] == true);
     REQUIRE(results[1] == true);
@@ -408,6 +927,7 @@ TEST_CASE("JSON matches - json_get on literal instead of column", "[json]") {
   // return true for every row since the literal contains name=alice,
   // regardless of the actual row data
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == true);
@@ -583,6 +1103,7 @@ TEST_CASE("JSON matches - multiple batches", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 2, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 5);
   // batch1: 10>5=true, 2>5=false; batch2: 3>5=false, 8>5=true, 6>5=true
   REQUIRE(results[0] == true);
@@ -617,6 +1138,7 @@ TEST_CASE("JSON matches - arrays still valid after call", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(results[0] == true);
   lancedb_free_json_matches(results);
 
@@ -659,6 +1181,7 @@ TEST_CASE("JSON matches - invalid JSON input", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 5);
   // Only the valid JSON with name=alice should match
   REQUIRE(results[0] == false);
@@ -699,6 +1222,7 @@ TEST_CASE("JSON matches - invalid nested JSON input", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   // Row 0: nested value is broken, but top-level "name" is extracted before the
   // parser reaches the malformed part — match
@@ -739,6 +1263,7 @@ TEST_CASE("JSON matches - nested string extraction", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -775,6 +1300,7 @@ TEST_CASE("JSON matches - nested integer extraction", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -811,6 +1337,7 @@ TEST_CASE("JSON matches - deeply nested path", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
@@ -844,6 +1371,7 @@ TEST_CASE("JSON matches - nested json_contains", "[json]") {
   LanceDBError err = lancedb_json_matches(
       arrays, ffi_schema, 1, expr, &results, &count, &error_message);
   REQUIRE(err == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
   REQUIRE(count == 3);
   REQUIRE(results[0] == true);
   REQUIRE(results[1] == false);
