@@ -1,0 +1,13 @@
+[package]
+name = "lancedb-external-provider"
+version = "0.1.0"
+edition = "2021"
+description = "External ObjectStoreProvider example for lancedb-c registry"
+
+[lib]
+name = "lancedb_external_provider"
+crate-type = ["cdylib"]
+
+[dependencies]
+lancedb = { package = "lancedb-c", path = "../.." }
+lance-io = { version = "=7.0.0", default-features = false }

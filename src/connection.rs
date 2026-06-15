@@ -18,7 +18,8 @@ use lancedb::connection::{connect, ConnectBuilder, Connection, TableNamesBuilder
 use lancedb::Table;
 
 use crate::error::{
-    handle_error, set_invalid_argument_message, set_unknown_error_message, LanceDBError,
+    handle_error, set_custom_error_message, set_invalid_argument_message,
+    set_unknown_error_message, LanceDBError,
 };
 use crate::types::LanceDBRecordBatchReader;
 
@@ -52,6 +53,18 @@ pub struct LanceDBTableNamesBuilder {
 #[repr(C)]
 pub struct LanceDBSession {
     inner: Arc<lancedb::Session>,
+}
+
+/// Opaque handle to an ObjectStoreRegistry
+#[repr(C)]
+pub struct LanceDBObjectStoreRegistry {
+    inner: Arc<lancedb::ObjectStoreRegistry>,
+}
+
+/// Opaque handle to an ObjectStoreProvider
+#[repr(C)]
+pub struct LanceDBObjectStoreProvider {
+    pub inner: Option<Arc<dyn lance_io::object_store::ObjectStoreProvider>>,
 }
 
 /// Session creation options
@@ -262,6 +275,48 @@ pub unsafe extern "C" fn lancedb_connection_uri(
     cached_uri.as_ptr()
 }
 
+/// Internal helper to create a session with optional custom registry
+///
+/// # Safety
+/// - `options` can be NULL to use default session configuration
+/// - `registry` must be a valid Arc<ObjectStoreRegistry> or None for default
+unsafe fn create_session_impl(
+    options: *const LanceDBSessionOptions,
+    registry: Option<Arc<lancedb::ObjectStoreRegistry>>,
+) -> *mut LanceDBSession {
+    // Determine cache sizes from options
+    let (index_cache_bytes, metadata_cache_bytes) = if options.is_null() {
+        (
+            DEFAULT_INDEX_CACHE_SIZE_BYTES,
+            DEFAULT_METADATA_CACHE_SIZE_BYTES,
+        )
+    } else {
+        let session_options = &*options;
+        let index = if session_options.index_cache_bytes == 0 {
+            DEFAULT_INDEX_CACHE_SIZE_BYTES
+        } else {
+            session_options.index_cache_bytes
+        };
+        let metadata = if session_options.metadata_cache_bytes == 0 {
+            DEFAULT_METADATA_CACHE_SIZE_BYTES
+        } else {
+            session_options.metadata_cache_bytes
+        };
+        (index, metadata)
+    };
+
+    // Use provided registry or create default
+    let registry = registry.unwrap_or_else(|| Arc::new(lancedb::ObjectStoreRegistry::default()));
+
+    let session = Arc::new(lancedb::Session::new(
+        index_cache_bytes,
+        metadata_cache_bytes,
+        registry,
+    ));
+
+    Box::into_raw(Box::new(LanceDBSession { inner: session }))
+}
+
 /// Create a new session
 ///
 /// # Safety
@@ -274,28 +329,132 @@ pub unsafe extern "C" fn lancedb_connection_uri(
 pub unsafe extern "C" fn lancedb_session_new(
     options: *const LanceDBSessionOptions,
 ) -> *mut LanceDBSession {
-    let session = if options.is_null() {
-        Arc::new(lancedb::Session::default())
+    create_session_impl(options, None)
+}
+
+/// Create a new session with a custom ObjectStoreRegistry
+///
+/// This function allows external code to provide a custom ObjectStoreRegistry.
+///
+/// # Safety
+/// - `options` can be NULL to use default session configuration
+/// - `registry` must be a valid pointer to `LanceDBObjectStoreRegistry` created via `lancedb_registry_new()`,
+///   or NULL to use a default registry. This function takes ownership of the registry.
+///
+/// # Returns
+/// - Non-null pointer to LanceDBSession on success
+/// - Null pointer on failure
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_session_new_with_registry(
+    options: *const LanceDBSessionOptions,
+    registry: *const LanceDBObjectStoreRegistry,
+) -> *mut LanceDBSession {
+    let registry_arc = if registry.is_null() {
+        None
     } else {
-        let session_options = &*options;
-        let index_cache_bytes = if session_options.index_cache_bytes == 0 {
-            DEFAULT_INDEX_CACHE_SIZE_BYTES
-        } else {
-            session_options.index_cache_bytes
-        };
-        let metadata_cache_bytes = if session_options.metadata_cache_bytes == 0 {
-            DEFAULT_METADATA_CACHE_SIZE_BYTES
-        } else {
-            session_options.metadata_cache_bytes
-        };
-        Arc::new(lancedb::Session::new(
-            index_cache_bytes,
-            metadata_cache_bytes,
-            Arc::new(lancedb::ObjectStoreRegistry::default()),
-        ))
+        // Take ownership of the LanceDBObjectStoreRegistry
+        let registry_box = Box::from_raw(registry as *mut LanceDBObjectStoreRegistry);
+        Some(registry_box.inner)
+    };
+    create_session_impl(options, registry_arc)
+}
+
+/// Create a new ObjectStoreRegistry
+///
+/// Creates a new registry with default ObjectStore providers.
+/// The registry can be passed to `lancedb_session_new_with_registry()`.
+///
+/// # Returns
+/// - Non-null pointer to LanceDBObjectStoreRegistry on success
+/// - Null pointer on failure
+#[no_mangle]
+pub extern "C" fn lancedb_registry_new() -> *mut LanceDBObjectStoreRegistry {
+    let registry = Arc::new(lancedb::ObjectStoreRegistry::default());
+    let boxed = Box::new(LanceDBObjectStoreRegistry { inner: registry });
+    Box::into_raw(boxed)
+}
+
+/// Free an ObjectStoreRegistry
+///
+/// Only call this if the registry was NOT passed to `lancedb_session_new_with_registry()`.
+/// If the registry was passed to a session, the session owns it and will free it.
+///
+/// # Safety
+/// - `registry` must be a valid pointer returned from `lancedb_registry_new()`
+/// - `registry` must not have been passed to `lancedb_session_new_with_registry()`
+/// - `registry` must not be used after calling this function
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_registry_free(registry: *mut LanceDBObjectStoreRegistry) {
+    if !registry.is_null() {
+        let _ = Box::from_raw(registry);
+    }
+}
+
+/// Free an ObjectStoreProvider
+///
+/// Only call this if the provider was NOT passed to `lancedb_registry_insert_provider()`.
+/// If the provider was inserted into a registry, the registry owns it.
+///
+/// # Safety
+/// - `provider` must not have been passed to `lancedb_registry_insert_provider()`
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_object_store_provider_free(
+    provider: *mut LanceDBObjectStoreProvider,
+) {
+    if !provider.is_null() {
+        let _ = Box::from_raw(provider);
+    }
+}
+
+/// Insert an ObjectStoreProvider into an ObjectStoreRegistry for a given URL scheme
+///
+/// The provider's inner implementation must have been set before calling this function.
+/// Ownership of the provider is transferred to the registry.
+///
+/// # Safety
+/// - `registry` must be a valid pointer from lancedb_registry_new()
+/// - `scheme` must be a valid null-terminated C string
+/// - `provider` must be a valid pointer from lancedb_object_store_provider_new()
+///   with its inner implementation populated
+///
+/// # Returns
+/// - 0 on success
+/// - error code on failure
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_registry_insert_provider(
+    registry: *mut LanceDBObjectStoreRegistry,
+    scheme: *const c_char,
+    provider: *mut LanceDBObjectStoreProvider,
+    error_message: *mut *mut c_char,
+) -> LanceDBError {
+    if registry.is_null() || scheme.is_null() || provider.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
+    }
+
+    let scheme_str = match CStr::from_ptr(scheme).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_custom_error_message(error_message, "Invalid URL scheme string");
+            return LanceDBError::InvalidInput;
+        }
     };
 
-    Box::into_raw(Box::new(LanceDBSession { inner: session }))
+    let provider_box = Box::from_raw(provider);
+    let provider_arc = match provider_box.inner {
+        Some(arc) => arc,
+        None => {
+            set_custom_error_message(
+                error_message,
+                "LanceDBObjectStoreProvider is not initialized",
+            );
+            return LanceDBError::InvalidArgument;
+        }
+    };
+
+    let registry_ref = &*registry;
+    registry_ref.inner.insert(scheme_str, provider_arc);
+    LanceDBError::Success
 }
 
 /// Get index cache stats for a session
