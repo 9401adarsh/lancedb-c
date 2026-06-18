@@ -747,6 +747,26 @@ void lancedb_session_free(LanceDBSession* session);
 void lancedb_table_free(LanceDBTable* table);
 
 /**
+ * Run a callback on an extended stack.
+ *
+ * If the remaining stack is below red_zone bytes, a new stack segment
+ * of stack_size bytes is allocated before calling the callback.
+ * Use this to wrap coroutine bodies so that inner FFI calls can reuse
+ * the same stack segment instead of allocating one per call.
+ *
+ * The callback must not unwind across the FFI boundary (no C++ exceptions,
+ * no longjmp). In C++ code, wrap the callback body in try/catch.
+ * Using an extern "C" function is recommended, though a non-capturing
+ * lambda will compile on all major compilers as well.
+ *
+ * @param callback - function pointer to call on the extended stack (NULL is a safe no-op)
+ * @param user_data - opaque pointer passed through to the callback
+ * @param red_zone - minimum remaining stack (bytes) before growing
+ * @param stack_size - size of the new stack segment (bytes) if growth is needed (clamped to at least red_zone)
+ */
+void lancedb_run_on_stack(void (*callback)(void*), void* user_data, size_t red_zone, size_t stack_size);
+
+/**
  * Create a new table with Arrow schema
  *
  * @param connection - pointer to LanceDBConnection

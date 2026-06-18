@@ -25,6 +25,18 @@
    obj:*/liblancedb.so
 }
 
+# lance moka cache leak — crossbeam channels not cleaned up on exit
+{
+   lance_moka_cache_leak
+   Memcheck:Leak
+   match-leak-kinds: definite
+   fun:malloc
+   ...
+   fun:*moka*base_cache*BaseCache*new*
+   ...
+   obj:*/liblancedb.so
+}
+
 # known glibc internal allocation in the DNS resolver
 {
    glibc-resolver-cache

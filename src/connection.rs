@@ -4,7 +4,7 @@
 //! Connection-related FFI functions for LanceDB C bindings
 
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 use std::ptr;
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -1256,4 +1256,31 @@ pub unsafe extern "C" fn lancedb_table_free(table: *mut LanceDBTable) {
     if !table.is_null() {
         let _ = Box::from_raw(table);
     }
+}
+
+/// Run a callback on an extended stack.
+///
+/// If the remaining stack is below `red_zone` bytes, a new stack segment
+/// of `stack_size` bytes is allocated before calling the callback.
+/// Use this to wrap coroutine bodies so that inner FFI calls can reuse
+/// the same stack segment instead of allocating one per call.
+///
+/// # Safety
+/// - `callback` must be a valid function pointer
+/// - `user_data` is passed through to the callback unchanged
+#[no_mangle]
+pub unsafe extern "C" fn lancedb_run_on_stack(
+    callback: Option<extern "C" fn(*mut c_void)>,
+    user_data: *mut c_void,
+    red_zone: usize,
+    stack_size: usize,
+) {
+    let callback = match callback {
+        Some(f) => f,
+        None => return,
+    };
+    let stack_size = stack_size.max(red_zone);
+    stacker::maybe_grow(red_zone, stack_size, || {
+        callback(user_data);
+    });
 }
