@@ -198,11 +198,16 @@ if(BUILD_EXAMPLES)
   else()
     set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
   endif()
+  if(WIN32)
+    set(EXT_PROVIDER_LIB_PATHS "${EXT_PROVIDER_SHARED_PATH}" "${EXT_PROVIDER_IMPORT_PATH}")
+  else()
+    set(EXT_PROVIDER_LIB_PATHS "${EXT_PROVIDER_SHARED_PATH}")
+  endif()
   add_custom_target(external-provider-lib
     COMMAND ${EXT_PROVIDER_CARGO_CMD}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples/external_provider
     COMMENT "Building external provider Rust crate..."
-    BYPRODUCTS ${EXT_PROVIDER_SHARED_PATH}
+    BYPRODUCTS ${EXT_PROVIDER_LIB_PATHS}
   )
   add_library(lancedb_external_provider SHARED IMPORTED)
   set_target_properties(lancedb_external_provider PROPERTIES
