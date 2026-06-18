@@ -190,7 +190,45 @@ if(BUILD_EXAMPLES)
     BUILD_RPATH ${RUST_TARGET_DIR}
   )
 
-  add_custom_target(examples DEPENDS simple full s3)
+  # external_provider helper crate (provides external_object_store_provider_create)
+  set(EXT_PROVIDER_CARGO_CMD cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
+  if(WIN32)
+    set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    set(EXT_PROVIDER_IMPORT_PATH "${RUST_TARGET_DIR}/${CMAKE_IMPORT_LIBRARY_PREFIX}lancedb_external_provider${CMAKE_IMPORT_LIBRARY_SUFFIX}")
+  else()
+    set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  endif()
+  add_custom_target(external-provider-lib
+    COMMAND ${EXT_PROVIDER_CARGO_CMD}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/examples/external_provider
+    COMMENT "Building external provider Rust crate..."
+    BYPRODUCTS ${EXT_PROVIDER_SHARED_PATH}
+  )
+  add_library(lancedb_external_provider SHARED IMPORTED)
+  set_target_properties(lancedb_external_provider PROPERTIES
+    IMPORTED_LOCATION "${EXT_PROVIDER_SHARED_PATH}"
+    IMPORTED_IMPLIB "${EXT_PROVIDER_IMPORT_PATH}"
+  )
+  add_dependencies(lancedb_external_provider external-provider-lib)
+
+  # lancedb registry example
+  add_executable(lancedb_registry examples/lancedb_registry.cpp)
+  target_link_libraries(lancedb_registry
+    lancedb
+    lancedb_external_provider
+    Threads::Threads
+    ${ARROW_LIBRARIES}
+  )
+  target_include_directories(lancedb_registry
+    PRIVATE ${ARROW_INCLUDE_DIRS}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  target_compile_options(lancedb_registry PRIVATE ${ARROW_CFLAGS_OTHER})
+  set_target_properties(lancedb_registry PROPERTIES
+    BUILD_RPATH ${RUST_TARGET_DIR}
+  )
+
+  add_custom_target(examples DEPENDS simple full s3 lancedb_registry)
 endif()
 
 if(BUILD_DOCS)

@@ -61,6 +61,16 @@ typedef struct LanceDBQueryResult LanceDBQueryResult;
 typedef struct LanceDBSession LanceDBSession;
 
 /**
+ * Opaque handle to a LanceDB ObjectStoreRegistry
+ */
+typedef struct LanceDBObjectStoreRegistry LanceDBRegistry;
+
+/**
+ * Opaque handle to a LanceDB ObjectStoreProvider
+ */
+typedef struct LanceDBObjectStoreProvider LanceDBObjectStoreProvider;
+
+/**
  * Opaque handle to Arrow RecordBatchReader
  */
 typedef struct LanceDBRecordBatchReader LanceDBRecordBatchReader;
@@ -614,6 +624,75 @@ void lancedb_connection_free(LanceDBConnection* connection);
  * The returned session must be freed with lancedb_session_free().
  */
 LanceDBSession* lancedb_session_new(const LanceDBSessionOptions* options);
+
+/**
+ * Create a new session with a custom ObjectStoreRegistry
+ *
+ * @param options - pointer to LanceDBSessionOptions, or NULL for defaults
+ * @param registry - pointer to LanceDBObjectStoreRegistry, or NULL to use a default registry.
+ *
+ * - The registry must be created using "lancedb_registry_new()" API
+ * - When registry is non-NULL, this function takes ownership of it and it
+ *   will be released when the session is freed.
+ * - If registry is NULL, a default ObjectStoreRegistry is created internally.
+ *
+ * @return Non-null pointer to LanceDBSession on success, NULL on failure
+ *
+ * The returned session must be freed with lancedb_session_free().
+ */
+LanceDBSession* lancedb_session_new_with_registry( const LanceDBSessionOptions* options,
+					    const LanceDBObjectStoreRegistry* registry);
+
+/**
+ * Create a new ObjectStoreRegistry
+ *
+ * Creates a new registry with default ObjectStore providers (local filesystem, S3, etc.).
+ * After creation, custom providers can be registered which can even override the
+ * default ones for existing scheme using "lancedb_registry_insert_provider()"
+ *
+ * - If the registry created is passed to a session, ownership will be transferred
+ * - If NOT passed to a session, it must be freed with lancedb_registry_free()
+ *
+ * @return Non-null pointer to LanceDBObjectStoreRegistry on success, NULL on failure
+ */
+LanceDBObjectStoreRegistry* lancedb_registry_new(void);
+
+/**
+ * Free an ObjectStoreRegistry
+ *
+ * @param registry - pointer to LanceDBObjectStoreRegistry to free
+ *
+ * Only call this if the registry was NOT passed to any session.
+ * If the registry was passed to a session, the session owns it and will free it.
+ */
+void lancedb_registry_free(LanceDBObjectStoreRegistry* registry);
+
+/**
+ * Insert or override an ObjectStoreProvider into an ObjectStoreRegistry for a given URL scheme
+ *
+ * @param registry - pointer to LanceDBObjectStoreRegistry
+ * @param scheme - URL scheme to register the provider for (e.g., "s3")
+ * @param provider - pointer to LanceDBObjectStoreProvider. Ownership is transferred
+ *                   to the registry; do not free the provider after this call.
+ *
+ * @return 0 on success, -1 on failure
+ *
+ * If error_message is provided and an error occurs, the caller must free
+ * the error message with lancedb_free_string().
+ */
+LanceDBError lancedb_registry_insert_provider( LanceDBObjectStoreRegistry* registry,
+			    const char* scheme, LanceDBObjectStoreProvider* provider,
+    			    char** error_message);
+
+/**
+ * Free an ObjectStoreProvider
+ *
+ * @param provider - pointer to LanceDBObjectStoreProvider to free
+ *
+ * Only call this if the provider was NOT passed to lancedb_registry_insert_provider().
+ * If the provider was inserted into a registry, the registry owns it.
+ */
+void lancedb_object_store_provider_free(LanceDBObjectStoreProvider* provider);
 
 /**
  * Get index cache stats for a session

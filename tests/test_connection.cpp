@@ -148,6 +148,89 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Session", "[connection]") {
     LanceDBConnection* db = lancedb_connect_builder_execute(builder);
     REQUIRE(db == nullptr);
   }
+  SECTION("Create and free registry") {
+    // Test creating and freeing a registry without using it
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    lancedb_registry_free(registry);
+  }
+  SECTION("Create session with registry - NULL registry uses default") {
+    // NULL registry should use default ObjectStoreRegistry
+    LanceDBSession* session = lancedb_session_new_with_registry(nullptr, nullptr);
+    REQUIRE(session != nullptr);
+    lancedb_session_free(session);
+  }
+  SECTION("Create session with options and NULL registry") {
+    LanceDBSessionOptions options{};
+    options.index_cache_bytes = 1024 * 1024;
+    options.metadata_cache_bytes = 2 * 1024 * 1024;
+    LanceDBSession* session = lancedb_session_new_with_registry(&options, nullptr);
+    REQUIRE(session != nullptr);
+    lancedb_session_free(session);
+  }
+  SECTION("Create session with custom registry") {
+    // Create registry using C API
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    // Create session with custom registry (transfers ownership)
+    LanceDBSession* session = lancedb_session_new_with_registry(nullptr, registry);
+    REQUIRE(session != nullptr);
+    // Note: registry ownership transferred, don't free it
+    lancedb_session_free(session);
+  }
+  SECTION("Create session with custom registry and options") {
+    LanceDBSessionOptions options{};
+    options.index_cache_bytes = 512 * 1024 * 1024;
+    options.metadata_cache_bytes = 256 * 1024 * 1024;
+    // Create registry using C API
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    // Create session with custom registry and options (transfers ownership)
+    LanceDBSession* session = lancedb_session_new_with_registry(&options, registry);
+    REQUIRE(session != nullptr);
+    lancedb_session_free(session);
+  }
+  SECTION("Session with registry can be used with connection builder") {
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    LanceDBSession* session = lancedb_session_new_with_registry(nullptr, registry);
+    REQUIRE(session != nullptr);
+    LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
+    REQUIRE(builder != nullptr);
+    builder = lancedb_connect_builder_session(builder, session);
+    REQUIRE(builder != nullptr);
+    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
+    REQUIRE(db != nullptr);
+    lancedb_connection_free(db);
+    lancedb_session_free(session);
+  }
+  SECTION("Insert NULL provider into registry returns error") {
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    char* error_message = nullptr;
+    LanceDBError rc = lancedb_registry_insert_provider(registry, "s3", nullptr, &error_message);
+    REQUIRE(rc == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+    lancedb_registry_free(registry);
+  }
+  SECTION("Insert provider with NULL registry returns error") {
+    char* error_message = nullptr;
+    LanceDBError rc = lancedb_registry_insert_provider(nullptr, "s3", nullptr, &error_message);
+    REQUIRE(rc == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+  SECTION("Insert provider with NULL scheme returns error") {
+    LanceDBObjectStoreRegistry* registry = lancedb_registry_new();
+    REQUIRE(registry != nullptr);
+    char* error_message = nullptr;
+    LanceDBError rc = lancedb_registry_insert_provider(registry, nullptr, nullptr, &error_message);
+    REQUIRE(rc == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+    lancedb_registry_free(registry);
+  }
 }
 
 TEST_CASE_METHOD(LanceDBFixture, "LanceDB Tables", "[connection]") {
