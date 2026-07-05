@@ -311,12 +311,15 @@ LanceDBConnectBuilder* lancedb_connect(const char* uri);
  * Execute the connection and return a Connection handle
  *
  * @param builder - pointer to LanceDBConnectBuilder returned from lancedb_connect()
- * @return Non-null pointer to LanceDBConnection on success, NULL on failure
+ * @param connection - pointer to receive the LanceDBConnection pointer
+ * @param error_message - optional pointer to receive detailed error message (NULL to ignore)
+ * @return Error code indicating success or failure
  *
  * On success, the builder is consumed by this function and must not be used after calling.
  * The returned connection must be freed with lancedb_connection_free().
  */
-LanceDBConnection* lancedb_connect_builder_execute(LanceDBConnectBuilder* builder);
+LanceDBError lancedb_connect_builder_execute( LanceDBConnectBuilder* builder,
+		    LanceDBConnection** connection, char** error_message);
 
 
 /**

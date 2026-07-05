@@ -64,7 +64,7 @@ public:
   LanceDBFixture() {
     LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
     REQUIRE(builder != nullptr);
-    db = lancedb_connect_builder_execute(builder);
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, nullptr) == LANCEDB_SUCCESS);
     REQUIRE(db != nullptr);
   }
 
@@ -77,7 +77,7 @@ public:
 };
 
 class LanceDBSessionFixture : public LanceDBFixture {
-  protected: 
+  protected:
     LanceDBSession* session = nullptr;
     LanceDBSessionOptions session_options = {.index_cache_bytes = 1024 * 1024, .metadata_cache_bytes = 512 * 1024};
   public:
@@ -88,7 +88,9 @@ class LanceDBSessionFixture : public LanceDBFixture {
       session = lancedb_session_new(&session_options);
       REQUIRE(session != nullptr);
       builder = lancedb_connect_builder_session(builder, session);
-      db = lancedb_connect_builder_execute(builder);
+      char* error_message = nullptr;
+      REQUIRE(lancedb_connect_builder_execute(builder, &db, &error_message) == LANCEDB_SUCCESS);
+      REQUIRE(error_message == nullptr);
       REQUIRE(db != nullptr);
     }
 

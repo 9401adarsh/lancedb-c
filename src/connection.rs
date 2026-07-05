@@ -125,31 +125,41 @@ pub unsafe extern "C" fn lancedb_connect(uri: *const c_char) -> *mut LanceDBConn
 /// # Safety
 /// - `builder` must be a valid pointer returned from `lancedb_connect`
 /// - `builder` will be consumed and must not be used after calling this function
+/// - `connection` must be a valid pointer to receive the connection
+/// - `error_message` can be NULL to ignore detailed error messages
 ///
 /// # Returns
-/// - Non-null pointer to LanceDBConnection on success
-/// - Null pointer on failure
+/// - Error code indicating success or failure
 #[no_mangle]
 pub unsafe extern "C" fn lancedb_connect_builder_execute(
     builder: *mut LanceDBConnectBuilder,
-) -> *mut LanceDBConnection {
+    connection: *mut *mut LanceDBConnection,
+    error_message: *mut *mut c_char,
+) -> LanceDBError {
     if builder.is_null() {
-        return ptr::null_mut();
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
     }
 
     let builder_box = Box::from_raw(builder);
     let connect_builder = *builder_box.inner;
 
+    if connection.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
+    }
+
     let runtime = get_runtime();
     match runtime.block_on(connect_builder.execute()) {
-        Ok(connection) => {
+        Ok(conn) => {
             let boxed_connection = Box::new(LanceDBConnection {
-                inner: connection,
+                inner: conn,
                 uri_cache: OnceLock::new(),
             });
-            Box::into_raw(boxed_connection)
+            *connection = Box::into_raw(boxed_connection);
+            LanceDBError::Success
         }
-        Err(_) => ptr::null_mut(),
+        Err(e) => handle_error(&e, error_message),
     }
 }
 

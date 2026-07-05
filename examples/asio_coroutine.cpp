@@ -276,8 +276,13 @@ int main(int argc, char* argv[]) {
   // connect
   auto* builder = lancedb_connect((data_dir + "/asio-example").c_str());
   if (!builder) { std::cerr << "connect builder failed" << std::endl; return 1; }
-  auto* db = lancedb_connect_builder_execute(builder);
-  if (!db) { std::cerr << "connect failed" << std::endl; return 1; }
+  LanceDBConnection* db = nullptr;
+  char* error_msg = nullptr;
+  if (lancedb_connect_builder_execute(builder, &db, &error_msg) != LANCEDB_SUCCESS) {
+    std::cerr << "connect failed: " << (error_msg ? error_msg : "unknown") << std::endl;
+    lancedb_free_string(error_msg);
+    return 1;
+  }
 
   // create table with initial data
   std::cout << "num_vectors = " << num_vectors << std::endl;
