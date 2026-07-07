@@ -26,7 +26,8 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Connection Builder", "[connection]") {
     REQUIRE(builder != nullptr);
     builder = lancedb_connect_builder_session(builder, nullptr);
     REQUIRE(builder != nullptr);
-    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
+    LanceDBConnection* db = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, nullptr) == LANCEDB_SUCCESS);
     REQUIRE(db != nullptr);
     lancedb_connection_free(db);
   }
@@ -70,7 +71,8 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Connection Builder", "[connection]") {
     REQUIRE(builder != nullptr);
     builder = lancedb_connect_builder_session(builder, session);
     REQUIRE(builder != nullptr);
-    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
+    LanceDBConnection* db = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, nullptr) == LANCEDB_SUCCESS);
     REQUIRE(db != nullptr);
     lancedb_connection_free(db);
     lancedb_session_free(session);
@@ -80,7 +82,8 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Connection Builder", "[connection]") {
     REQUIRE(builder != nullptr);
     builder = lancedb_connect_builder_session(builder, nullptr);
     REQUIRE(builder != nullptr);
-    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
+    LanceDBConnection* db = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, nullptr) == LANCEDB_SUCCESS);
     REQUIRE(db != nullptr);
     lancedb_connection_free(db);
   }
@@ -145,8 +148,11 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Session", "[connection]") {
     blocker.close();
 
     LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
-    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
-    REQUIRE(db == nullptr);
+    LanceDBConnection* db = nullptr;
+    char* error_message = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, &error_message) != LANCEDB_SUCCESS);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
   }
   SECTION("Create and free registry") {
     // Test creating and freeing a registry without using it
@@ -199,7 +205,8 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Session", "[connection]") {
     REQUIRE(builder != nullptr);
     builder = lancedb_connect_builder_session(builder, session);
     REQUIRE(builder != nullptr);
-    LanceDBConnection* db = lancedb_connect_builder_execute(builder);
+    LanceDBConnection* db = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, nullptr) == LANCEDB_SUCCESS);
     REQUIRE(db != nullptr);
     lancedb_connection_free(db);
     lancedb_session_free(session);

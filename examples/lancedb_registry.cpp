@@ -132,9 +132,11 @@ int main() {
     return 1;
   }
 
-  LanceDBConnection* db = lancedb_connect_builder_execute(builder);
-  if (!db) {
-    std::cerr << "failed to connect to database" << std::endl;
+  LanceDBConnection* db = nullptr;
+  char* error_msg = nullptr;
+  if (const LanceDBError result = lancedb_connect_builder_execute(builder, &db, &error_msg); result != LANCEDB_SUCCESS) {
+    std::cerr << "failed to connect to database: " << (error_msg ? error_msg : "unknown") << std::endl;
+    lancedb_free_string(error_msg);
     lancedb_session_free(session);
     return 1;
   }

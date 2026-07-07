@@ -84,9 +84,11 @@ int main(int argc, char** argv) {
   builder = lancedb_connect_builder_storage_option(builder, "allow_http", "true");
   builder = lancedb_connect_builder_storage_option(builder, "aws_s3_addressing_style", "path");
 
-  LanceDBConnection* db = lancedb_connect_builder_execute(builder);
-  if (!db) {
-    std::cerr << "failed to connect to database" << std::endl;
+  LanceDBConnection* db = nullptr;
+  char* error_msg = nullptr;
+  if (const LanceDBError result = lancedb_connect_builder_execute(builder, &db, &error_msg); result != LANCEDB_SUCCESS) {
+    std::cerr << "failed to connect to database: " << (error_msg ? error_msg : "unknown") << std::endl;
+    lancedb_free_string(error_msg);
     return 1;
   }
 
