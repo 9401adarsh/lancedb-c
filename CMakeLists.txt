@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.22)
 project(lancedb-c VERSION 0.21.2)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -34,7 +34,7 @@ if(CMAKE_CROSSCOMPILING AND NOT RUST_TARGET_TRIPLE)
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "arm64")
       set(RUST_TARGET_TRIPLE "aarch64-apple-darwin")
     endif()
-  elseif(LINUX)
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x86_64")
       set(RUST_TARGET_TRIPLE "x86_64-unknown-linux-gnu")
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "aarch64")
