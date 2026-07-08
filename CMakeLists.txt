@@ -214,6 +214,7 @@ if(BUILD_EXAMPLES)
     IMPORTED_LOCATION "${EXT_PROVIDER_SHARED_PATH}"
     IMPORTED_IMPLIB "${EXT_PROVIDER_IMPORT_PATH}"
   )
+  add_dependencies(external-provider-lib rust-lib)
   add_dependencies(lancedb_external_provider external-provider-lib)
 
   # lancedb registry example
