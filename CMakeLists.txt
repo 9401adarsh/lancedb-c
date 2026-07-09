@@ -69,16 +69,23 @@ else()
   set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/${RUST_TARGET_DIR}/release")
   set(RUST_BUILD_TYPE "--release")
 endif()
+option(BUILD_SHARED_LIBS "Build shared library (OFF for static)" ON)
+
 set(STATIC_LIB_PATH "${RUST_TARGET_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}lancedb${CMAKE_STATIC_LIBRARY_SUFFIX}")
+set(SHARED_LIB_PATH "${RUST_TARGET_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}lancedb${CMAKE_SHARED_LIBRARY_SUFFIX}")
 if(WIN32)
   set(SHARED_LIB_PATH "${RUST_TARGET_DIR}/lancedb${CMAKE_SHARED_LIBRARY_SUFFIX}")
   set(IMPORT_LIB_PATH "${RUST_TARGET_DIR}/${CMAKE_IMPORT_LIBRARY_PREFIX}lancedb${CMAKE_IMPORT_LIBRARY_SUFFIX}")
-  set(LANCEDB_LIB_PATHS "${STATIC_LIB_PATH}" "${SHARED_LIB_PATH}" "${IMPORT_LIB_PATH}")
-else()
-  set(SHARED_LIB_PATH "${RUST_TARGET_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}lancedb${CMAKE_SHARED_LIBRARY_SUFFIX}")
-  set(LANCEDB_LIB_PATHS "${STATIC_LIB_PATH}" "${SHARED_LIB_PATH}")
 endif()
 
+if(BUILD_SHARED_LIBS)
+  set(LANCEDB_LIB_PATHS "${SHARED_LIB_PATH}")
+  if(WIN32)
+    list(APPEND LANCEDB_LIB_PATHS "${IMPORT_LIB_PATH}")
+  endif()
+else()
+  set(LANCEDB_LIB_PATHS "${STATIC_LIB_PATH}")
+endif()
 option(BUILD_EXAMPLES "Build examples" OFF)
 option(BUILD_DOCS "Build documentation" OFF)
 option(BUILD_TESTS "Build tests" OFF)
@@ -119,6 +126,10 @@ if (BUILD_EXAMPLES OR BUILD_TESTS)
   endif()
 endif()
 
+include(cmake/ProbeRustNativeLibs.cmake)
+
+configure_file(lancedb.pc.in "${CMAKE_BINARY_DIR}/lancedb.pc" @ONLY)
+
 # rust-lib target
   set(CARGO_BUILD_COMMAND cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
 if(BUILD_COVERAGE)
@@ -133,11 +144,20 @@ add_custom_target(rust-lib ALL
 )
 
 # lancedb target
-add_library(lancedb SHARED IMPORTED)
-set_target_properties(lancedb PROPERTIES
-  IMPORTED_LOCATION "${SHARED_LIB_PATH}"
-  IMPORTED_IMPLIB "${IMPORT_LIB_PATH}"
-)
+if(BUILD_SHARED_LIBS)
+  add_library(lancedb SHARED IMPORTED)
+  set_target_properties(lancedb PROPERTIES
+    IMPORTED_LOCATION "${SHARED_LIB_PATH}"
+    IMPORTED_IMPLIB "${IMPORT_LIB_PATH}"
+  )
+else()
+  add_library(lancedb STATIC IMPORTED)
+  set_target_properties(lancedb PROPERTIES
+    IMPORTED_LOCATION "${STATIC_LIB_PATH}"
+  )
+  set_property(TARGET lancedb PROPERTY
+    INTERFACE_LINK_LIBRARIES ${LANCEDB_NATIVE_STATIC_LIBS})
+endif()
 add_dependencies(lancedb rust-lib)
 
 
@@ -698,16 +718,26 @@ add_custom_target(check
 )
 
 # Install
-if(WIN32)
-  install(FILES "${SHARED_LIB_PATH}" DESTINATION bin)
-  install(FILES "${STATIC_LIB_PATH}" "${IMPORT_LIB_PATH}" DESTINATION lib)
+if(BUILD_SHARED_LIBS)
+  if(WIN32)
+    install(FILES "${SHARED_LIB_PATH}" DESTINATION bin)
+    install(FILES "${IMPORT_LIB_PATH}" DESTINATION lib)
+  else()
+    install(FILES "${SHARED_LIB_PATH}" DESTINATION lib)
+  endif()
 else()
-  install(FILES ${LANCEDB_LIB_PATHS} DESTINATION lib)
+  install(FILES "${STATIC_LIB_PATH}" DESTINATION lib)
 endif()
 install(DIRECTORY include/ DESTINATION include)
+install(FILES "${CMAKE_BINARY_DIR}/lancedb.pc" DESTINATION lib/pkgconfig)
 
 message(STATUS "=== LanceDB C/C++ Bindings Configuration ===")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+if(BUILD_SHARED_LIBS)
+  message(STATUS "Library type: Shared")
+else()
+  message(STATUS "Library type: Static")
+endif()
 message(STATUS "Rust target triple: ${RUST_TARGET_TRIPLE}")
 message(STATUS "lancedb-c library paths: ${LANCEDB_LIB_PATHS}")
 if (BUILD_EXAMPLES OR BUILD_TESTS)
