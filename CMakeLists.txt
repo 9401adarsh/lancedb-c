@@ -389,6 +389,7 @@ if(BUILD_TESTS)
   set_target_properties(lancedb_table_meta_tests PROPERTIES
     BUILD_RPATH ${RUST_TARGET_DIR}
   )
+  list(APPEND TEST_TARGETS lancedb_table_meta_tests)
 
   # Add test executable for scalar index tests (runs with valgrind)
   add_executable(lancedb_index_tests
@@ -548,13 +549,13 @@ if(BUILD_TESTS)
   if(VALGRIND_EXECUTABLE)
     message(STATUS "Valgrind found: ${VALGRIND_EXECUTABLE}")
     # Run connection tests with valgrind
-    # Only fail on definite leaks, not "possibly lost" from Rust runtime
+    # Fail on definite and possible leaks; known false positives are in valgrind.supp
     add_test(NAME lancedb_connection_tests
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_connection.txt
@@ -566,8 +567,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_table.txt
@@ -579,8 +580,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_table_meta.txt
@@ -592,8 +593,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_index.txt
@@ -605,8 +606,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_query.txt
@@ -618,8 +619,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_df_query.txt
@@ -631,8 +632,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_json.txt
@@ -660,6 +661,8 @@ if(BUILD_TESTS)
     set(COVERAGE_REPORT_DIR "${CMAKE_BINARY_DIR}/coverage-report")
 
     add_custom_target(coverage
+      # Rebuild Rust library with coverage instrumentation
+      COMMAND ${CARGO_BUILD_COMMAND}
       # Run tests via ctest with profiling output directed to profraw dir
       COMMAND ${TEST_ENV_PREFIX}
         ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_BINARY_DIR} -j

@@ -10,7 +10,6 @@
    ...
    fun:*tokio*runtime*
    ...
-   obj:*/liblancedb.so
 }
 
 # Suppress regex_automata allocations (possibly lost)
@@ -22,7 +21,6 @@
    ...
    fun:*regex_automata*
    ...
-   obj:*/liblancedb.so
 }
 
 # lance moka cache leak — crossbeam channels not cleaned up on exit
@@ -34,7 +32,105 @@
    ...
    fun:*moka*base_cache*BaseCache*new*
    ...
-   obj:*/liblancedb.so
+}
+
+# OpenDAL global operator registry — one-time static init via Once::call_once
+{
+   opendal_operator_registry_init
+   Memcheck:Leak
+   match-leak-kinds: reachable,possible
+   fun:*
+   ...
+   fun:*opendal*
+   ...
+}
+
+# DataFusion session context — interior pointers in Arc/HashMap misclassified by valgrind
+{
+   datafusion_session_context
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*datafusion*
+   ...
+}
+
+# geodatafusion UDF registration
+{
+   geodatafusion_udf_register
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*geodatafusion*
+   ...
+}
+
+# Lance DataFusion UDF registration (JSON UDFs, etc.)
+{
+   lance_datafusion_udf
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*lance_datafusion*
+   ...
+}
+
+# Lance index plugin registry — one-time static init
+{
+   lance_index_plugin_registry
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*IndexPluginRegistry*
+   ...
+}
+
+# DashMap concurrent hash map — interior pointers from sharded RwLock layout
+{
+   dashmap_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*dashmap*DashMap*
+   ...
+}
+
+# Arrow schema Fields::from_iter — Arc interior pointers misclassified by valgrind
+{
+   arrow_schema_fields_from_iter
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*arrow_schema*fields*Fields*from_iter*
+   ...
+}
+
+# URL parser allocations
+{
+   url_parser_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*url*parser*Parser*
+   ...
+}
+
+# UUID formatting allocations
+{
+   uuid_fmt_possibly_lost
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:*
+   ...
+   fun:*uuid*fmt*
+   ...
 }
 
 # known glibc internal allocation in the DNS resolver
