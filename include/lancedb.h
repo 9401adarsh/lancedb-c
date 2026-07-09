@@ -153,7 +153,7 @@ static const char* LANCEDB_ERROR_MESSAGES[] = {
  * The caller must not free the returned string.
  */
 [[maybe_unused]] static const char* lancedb_error_to_message(LanceDBError error) {
-    if (error < 0 || error > LANCEDB_UNKNOWN) {
+    if (error > LANCEDB_UNKNOWN) {
         return "Invalid error code";
     }
     return LANCEDB_ERROR_MESSAGES[error];
