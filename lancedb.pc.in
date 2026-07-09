@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: lancedb
+Description: LanceDB C/C++ bindings
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -llancedb
+Libs.private: @LANCEDB_NATIVE_STATIC_LIBS_STRING@
