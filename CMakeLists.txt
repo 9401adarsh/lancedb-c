@@ -134,7 +134,9 @@ configure_file(lancedb.pc.in "${CMAKE_BINARY_DIR}/lancedb.pc" @ONLY)
   set(CARGO_BUILD_COMMAND cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
 if(BUILD_COVERAGE)
   set(PROFRAW_DIR "${CMAKE_BINARY_DIR}/profraw")
-  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "RUSTFLAGS=-C instrument-coverage" "LLVM_PROFILE_FILE=${PROFRAW_DIR}/%p_%m.profraw" ${CARGO_BUILD_COMMAND})
+  # Use CARGO_ENCODED_RUSTFLAGS (0x1f-separated) instead of RUSTFLAGS
+  # so that Cargo includes it in its fingerprint and triggers a rebuild
+  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${CARGO_BUILD_COMMAND})
 endif()
 add_custom_target(rust-lib ALL
   COMMAND ${CARGO_BUILD_COMMAND}
@@ -212,6 +214,9 @@ if(BUILD_EXAMPLES)
 
   # external_provider helper crate (provides external_object_store_provider_create)
   set(EXT_PROVIDER_CARGO_CMD cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
+  if(BUILD_COVERAGE)
+    set(EXT_PROVIDER_CARGO_CMD ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${EXT_PROVIDER_CARGO_CMD})
+  endif()
   if(WIN32)
     set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(EXT_PROVIDER_IMPORT_PATH "${RUST_TARGET_DIR}/${CMAKE_IMPORT_LIBRARY_PREFIX}lancedb_external_provider${CMAKE_IMPORT_LIBRARY_SUFFIX}")
@@ -409,6 +414,7 @@ if(BUILD_TESTS)
   set_target_properties(lancedb_table_meta_tests PROPERTIES
     BUILD_RPATH ${RUST_TARGET_DIR}
   )
+  list(APPEND TEST_TARGETS lancedb_table_meta_tests)
 
   # Add test executable for scalar index tests (runs with valgrind)
   add_executable(lancedb_index_tests
@@ -568,13 +574,13 @@ if(BUILD_TESTS)
   if(VALGRIND_EXECUTABLE)
     message(STATUS "Valgrind found: ${VALGRIND_EXECUTABLE}")
     # Run connection tests with valgrind
-    # Only fail on definite leaks, not "possibly lost" from Rust runtime
+    # Fail on definite and possible leaks; known false positives are in valgrind.supp
     add_test(NAME lancedb_connection_tests
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_connection.txt
@@ -586,8 +592,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_table.txt
@@ -599,8 +605,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_table_meta.txt
@@ -612,8 +618,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_index.txt
@@ -625,8 +631,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_query.txt
@@ -638,8 +644,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_df_query.txt
@@ -651,8 +657,8 @@ if(BUILD_TESTS)
       COMMAND ${TEST_ENV_PREFIX} ${VALGRIND_EXECUTABLE}
         --tool=memcheck
         --leak-check=full
-        --show-leak-kinds=definite
-        --errors-for-leak-kinds=definite
+        --show-leak-kinds=definite,possible
+        --errors-for-leak-kinds=definite,possible
         --track-origins=yes
         --error-exitcode=1
         --log-file=${CMAKE_BINARY_DIR}/valgrind_json.txt
