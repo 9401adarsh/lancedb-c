@@ -123,7 +123,9 @@ endif()
   set(CARGO_BUILD_COMMAND cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
 if(BUILD_COVERAGE)
   set(PROFRAW_DIR "${CMAKE_BINARY_DIR}/profraw")
-  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "RUSTFLAGS=-C instrument-coverage" "LLVM_PROFILE_FILE=${PROFRAW_DIR}/%p_%m.profraw" ${CARGO_BUILD_COMMAND})
+  # Use CARGO_ENCODED_RUSTFLAGS (0x1f-separated) instead of RUSTFLAGS
+  # so that Cargo includes it in its fingerprint and triggers a rebuild
+  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${CARGO_BUILD_COMMAND})
 endif()
 add_custom_target(rust-lib ALL
   COMMAND ${CARGO_BUILD_COMMAND}
@@ -192,6 +194,9 @@ if(BUILD_EXAMPLES)
 
   # external_provider helper crate (provides external_object_store_provider_create)
   set(EXT_PROVIDER_CARGO_CMD cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
+  if(BUILD_COVERAGE)
+    set(EXT_PROVIDER_CARGO_CMD ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${EXT_PROVIDER_CARGO_CMD})
+  endif()
   if(WIN32)
     set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(EXT_PROVIDER_IMPORT_PATH "${RUST_TARGET_DIR}/${CMAKE_IMPORT_LIBRARY_PREFIX}lancedb_external_provider${CMAKE_IMPORT_LIBRARY_SUFFIX}")
@@ -661,8 +666,6 @@ if(BUILD_TESTS)
     set(COVERAGE_REPORT_DIR "${CMAKE_BINARY_DIR}/coverage-report")
 
     add_custom_target(coverage
-      # Rebuild Rust library with coverage instrumentation
-      COMMAND ${CARGO_BUILD_COMMAND}
       # Run tests via ctest with profiling output directed to profraw dir
       COMMAND ${TEST_ENV_PREFIX}
         ${CMAKE_CTEST_COMMAND} --test-dir ${CMAKE_BINARY_DIR} -j
