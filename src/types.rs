@@ -3,8 +3,12 @@
 
 //! Common types shared across LanceDB C bindings modules
 
+use std::os::raw::c_char;
+
 use arrow_array::RecordBatchReader;
 use lancedb::DistanceType;
+
+use crate::expr::LanceDBExpr;
 
 /// Distance type enum for C API
 #[repr(C)]
@@ -51,4 +55,9 @@ impl LanceDBRecordBatchReader {
 pub struct LanceDBMergeInsertConfig {
     pub when_matched_update_all: i32, // Update all columns for matched records (1 = true, 0 = false)
     pub when_not_matched_insert_all: i32, // Insert all new records (1 = true, 0 = false)
+    /// SQL condition limiting which matched records are updated (NULL for no condition)
+    pub when_matched_update_all_condition: *const c_char,
+    /// DataFusion expression limiting which matched records are updated (NULL for no condition).
+    /// Not consumed by `lancedb_table_merge_insert`, and mutually exclusive with the SQL condition
+    pub when_matched_update_all_expr: *mut LanceDBExpr,
 }

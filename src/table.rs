@@ -99,6 +99,13 @@ pub unsafe extern "C" fn lancedb_table_add(
 /// - `data` must be a valid pointer to LanceDBRecordBatchReader containing data to merge
 /// - `on_columns` must be an array of valid null-terminated C strings containing column names
 /// - `num_on_columns` must match the actual number of columns in the array
+/// - `config.when_matched_update_all_condition`, when not NULL, must be a valid null-terminated
+///   C string containing an SQL predicate
+/// - `config.when_matched_update_all_expr`, when not NULL, must be a valid pointer returned from
+///   `lancedb_expr_*` functions. It is not consumed, and remains owned by the caller
+/// - the two conditions above are only used when `config.when_matched_update_all` is set,
+///   and are mutually exclusive, setting both is an error
+/// - `data` is always consumed, also when the other arguments are rejected
 /// - `error_message` can be NULL to ignore detailed error messages
 ///
 /// # Returns
@@ -112,7 +119,16 @@ pub unsafe extern "C" fn lancedb_table_merge_insert(
     config: *const LanceDBMergeInsertConfig,
     error_message: *mut *mut c_char,
 ) -> LanceDBError {
-    if table.is_null() || data.is_null() || on_columns.is_null() || num_columns == 0 {
+    if data.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
+    }
+
+    // Take ownership of the data reader before anything else, so that it is freed
+    // on every path, including the ones rejecting the rest of the arguments
+    let data_box = Box::from_raw(data);
+
+    if table.is_null() || on_columns.is_null() || num_columns == 0 {
         set_invalid_argument_message(error_message);
         return LanceDBError::InvalidArgument;
     }
@@ -133,11 +149,36 @@ pub unsafe extern "C" fn lancedb_table_merge_insert(
         column_names.push(col_str);
     }
 
+    // Extract the optional "when matched" condition, which is only used when matched
+    // records are updated
+    let mut update_condition_sql = None;
+    let mut update_condition_expr = None;
+    if !config.is_null() && (*config).when_matched_update_all != 0 {
+        let cfg = &*config;
+        let has_expr = !cfg.when_matched_update_all_expr.is_null();
+        let has_sql = !cfg.when_matched_update_all_condition.is_null();
+
+        // the two flavors of the condition are mutually exclusive
+        if has_expr && has_sql {
+            set_invalid_argument_message(error_message);
+            return LanceDBError::InvalidArgument;
+        }
+
+        if has_expr {
+            // the expression is borrowed, ownership stays with the caller
+            update_condition_expr = Some((*cfg.when_matched_update_all_expr).inner.clone());
+        } else if has_sql {
+            let Ok(condition) = CStr::from_ptr(cfg.when_matched_update_all_condition).to_str()
+            else {
+                set_invalid_argument_message(error_message);
+                return LanceDBError::InvalidArgument;
+            };
+            update_condition_sql = Some(condition.to_string());
+        }
+    }
+
     let tbl = &(*table).inner;
     let runtime = get_runtime();
-
-    // Take ownership of the data reader
-    let data_box = Box::from_raw(data);
 
     match runtime.block_on(async {
         let mut merge_builder = tbl.merge_insert(&column_names);
@@ -146,7 +187,11 @@ pub unsafe extern "C" fn lancedb_table_merge_insert(
         if !config.is_null() {
             let cfg = &*config;
             if cfg.when_matched_update_all != 0 {
-                merge_builder.when_matched_update_all(None);
+                if let Some(expr) = update_condition_expr {
+                    merge_builder.when_matched_update_all_expr(expr);
+                } else {
+                    merge_builder.when_matched_update_all(update_condition_sql);
+                }
             }
             if cfg.when_not_matched_insert_all != 0 {
                 merge_builder.when_not_matched_insert_all();

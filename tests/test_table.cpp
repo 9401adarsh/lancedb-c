@@ -38,13 +38,80 @@ extern "C" void merge_insert_on_stack(void* p) {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
     c->result = lancedb_table_merge_insert(
         c->table, reader, on_columns, 1, &config, &c->error_message);
   } catch (...) {
     c->result = LANCEDB_UNKNOWN;
   }
+}
+
+// Read the first value of the "data" column of the row with the given key
+static float first_data_value(LanceDBTable* table, const std::string& key) {
+  LanceDBQuery* query = lancedb_query_new(table);
+  REQUIRE(query != nullptr);
+
+  char* error_message = nullptr;
+  const auto filter = "key = '" + key + "'";
+  REQUIRE(lancedb_query_where_filter(query, filter.c_str(), &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+
+  LanceDBQueryResult* query_result = lancedb_query_execute(query);
+  REQUIRE(query_result != nullptr);
+
+  FFI_ArrowArray** result_arrays = nullptr;
+  FFI_ArrowSchema* result_schema = nullptr;
+  size_t count = 0;
+  REQUIRE(lancedb_query_result_to_arrow(
+      query_result, &result_arrays, &result_schema, &count, &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 1);
+
+  auto imported_schema = arrow::ImportSchema(reinterpret_cast<ArrowSchema*>(result_schema));
+  REQUIRE(imported_schema.ok());
+  auto imported_batch = arrow::ImportRecordBatch(
+      reinterpret_cast<ArrowArray*>(result_arrays[0]), imported_schema.ValueUnsafe());
+  REQUIRE(imported_batch.ok());
+
+  auto batch = imported_batch.ValueUnsafe();
+  REQUIRE(batch->num_rows() == 1);
+  auto data_array = std::static_pointer_cast<arrow::FixedSizeListArray>(batch->column(1));
+  auto values = std::static_pointer_cast<arrow::FloatArray>(data_array->values());
+  const auto value = values->Value(data_array->value_offset(0));
+
+  lancedb_free_arrow_arrays(result_arrays, count);
+  lancedb_free_arrow_schema(result_schema);
+
+  return value;
+}
+
+// Create a reader with rows for keys "key_<start_index>" .. "key_<start_index + num_rows - 1>",
+// where all values of the "data" column are set to "value"
+static LanceDBRecordBatchReader* create_reader_with_value(int num_rows, int start_index, float value) {
+  auto schema = create_test_schema();
+
+  arrow::StringBuilder key_builder;
+  arrow::FixedSizeListBuilder data_builder(arrow::default_memory_pool(),
+      std::make_unique<arrow::FloatBuilder>(), TEST_SCHEMA_DIMENSIONS);
+
+  for (int i = 0; i < num_rows; i++) {
+    REQUIRE(key_builder.Append("key_" + std::to_string(start_index + i)).ok());
+    auto list_builder = static_cast<arrow::FloatBuilder*>(data_builder.value_builder());
+    for (size_t j = 0; j < TEST_SCHEMA_DIMENSIONS; j++) {
+      REQUIRE(list_builder->Append(value).ok());
+    }
+    REQUIRE(data_builder.Append().ok());
+  }
+
+  std::shared_ptr<arrow::Array> key_array, data_array;
+  REQUIRE(key_builder.Finish(&key_array).ok());
+  REQUIRE(data_builder.Finish(&data_array).ok());
+
+  auto batch = arrow::RecordBatch::Make(schema, num_rows, {key_array, data_array});
+  return create_reader_from_batch(batch);
 }
 
 extern "C" void sql_delete_on_stack(void* p) {
@@ -336,7 +403,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -382,7 +451,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 0  // Don't insert new rows
+      .when_not_matched_insert_all = 0,  // Don't insert new rows
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -398,6 +469,162 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     // Version should increment to 3 (was 2 before merge insert)
     auto version = lancedb_table_version(table);
     REQUIRE(version == 3);
+  }
+
+  SECTION("Merge insert with SQL condition") {
+    // Merge keys 0-4 with a new value, but update only key_0
+    auto merge_reader = create_reader_with_value(5, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = "target.key = 'key_0'",
+      .when_matched_update_all_expr = nullptr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    REQUIRE(lancedb_table_count_rows(table) == 10);
+    // Only the row satisfying the condition was updated
+    REQUIRE(first_data_value(table, "key_0") == 888.0F);
+    REQUIRE(first_data_value(table, "key_1") == 10.0F);
+  }
+
+  SECTION("Merge insert with DataFusion expression condition") {
+    // Merge keys 0-4 with a new value, but update only key_1
+    auto merge_reader = create_reader_with_value(5, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("target.key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_1"));
+    REQUIRE(expr != nullptr);
+
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = expr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // The expression is not consumed by the merge insert
+    lancedb_expr_free(expr);
+
+    REQUIRE(lancedb_table_count_rows(table) == 10);
+    // Only the row satisfying the condition was updated
+    REQUIRE(first_data_value(table, "key_1") == 888.0F);
+    REQUIRE(first_data_value(table, "key_0") == 0.0F);
+  }
+
+  SECTION("Merge insert with both SQL and DataFusion conditions should fail") {
+    auto merge_reader = create_reader_with_value(5, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("target.key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_1"));
+    REQUIRE(expr != nullptr);
+
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = "target.key = 'key_0'",
+      .when_matched_update_all_expr = expr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_INVALID_ARGUMENT);
+
+    // Nothing was merged, and no row was updated
+    REQUIRE(lancedb_table_count_rows(table) == 10);
+    REQUIRE(first_data_value(table, "key_0") == 0.0F);
+    REQUIRE(first_data_value(table, "key_1") == 10.0F);
+
+    // Note: Reader was consumed by lancedb_table_merge_insert even on failure
+    lancedb_expr_free(expr);
+
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+  }
+
+  SECTION("Merge insert conditions are ignored when matched records are not updated") {
+    // Merge keys 0-4 (existing) and 10-14 (new)
+    auto merge_reader = create_reader_with_value(15, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("target.key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_1"));
+    REQUIRE(expr != nullptr);
+
+    // Both conditions are set, which is not rejected since they are not used
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 0,
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = "target.key = 'key_0'",
+      .when_matched_update_all_expr = expr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    lancedb_expr_free(expr);
+
+    // New rows were inserted, and no row was updated
+    REQUIRE(lancedb_table_count_rows(table) == 15);
+    REQUIRE(first_data_value(table, "key_0") == 0.0F);
+  }
+
+  SECTION("Merge insert with invalid SQL condition should fail") {
+    auto merge_reader = create_reader_with_value(5, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = "target.no_such_column = 42",
+      .when_matched_update_all_expr = nullptr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result != LANCEDB_SUCCESS);
+    REQUIRE(lancedb_table_count_rows(table) == 10);
+
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
   }
 
   SECTION("Merge insert with insert only") {
@@ -428,7 +655,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 0,  // Don't update existing rows
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -442,6 +671,36 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     REQUIRE(lancedb_table_count_rows(table) == 15);
 
     // Version should increment to 3 (was 2 before merge insert)
+    auto version = lancedb_table_version(table);
+    REQUIRE(version == 3);
+  }
+
+  SECTION("Merge insert with matching rows but no update") {
+    // All merged keys (0-4) match existing rows, but updating them is disabled
+    auto merge_reader = create_reader_with_value(5, 0, 888.0F);
+    REQUIRE(merge_reader != nullptr);
+
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 0,  // Don't update existing rows
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // Nothing to insert, and matched rows keep their original values
+    REQUIRE(lancedb_table_count_rows(table) == 10);
+    REQUIRE(first_data_value(table, "key_0") == 0.0F);
+    REQUIRE(first_data_value(table, "key_4") == 40.0F);
+
+    // Version increments to 3 (was 2 before merge insert) even though nothing changed
     auto version = lancedb_table_version(table);
     REQUIRE(version == 3);
   }
@@ -501,7 +760,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 0
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -524,7 +785,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -546,7 +809,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
     const char* on_columns[] = {"key"};
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -555,8 +820,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
 
     REQUIRE(result != LANCEDB_SUCCESS);
 
-    // Reader was not consumed due to error, must free it
-    lancedb_record_batch_reader_free(merge_reader);
+    // Note: Reader was consumed by lancedb_table_merge_insert even on failure
 
     if (error_message) {
       lancedb_free_string(error_message);
@@ -570,7 +834,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
 
     LanceDBMergeInsertConfig config = {
       .when_matched_update_all = 1,
-      .when_not_matched_insert_all = 1
+      .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr
     };
 
     char* error_message = nullptr;
@@ -579,12 +845,162 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
 
     REQUIRE(result != LANCEDB_SUCCESS);
 
-    // Reader was not consumed due to error, must free it
-    lancedb_record_batch_reader_free(merge_reader);
+    // Note: Reader was consumed by lancedb_table_merge_insert even on failure
 
     if (error_message) {
       lancedb_free_string(error_message);
     }
+  }
+
+  lancedb_table_free(table);
+}
+
+// Schema of a table holding a version per key, to be used with conditions
+// comparing the merged data with the data already in the table
+static std::shared_ptr<arrow::Schema> create_versioned_schema() {
+  return arrow::schema({arrow::field("key", arrow::utf8()),
+                        arrow::field("version", arrow::int32())});
+}
+
+// Create a reader with rows for keys "key_0" .. "key_<num_rows - 1>",
+// where the version of each row is taken from "versions"
+static LanceDBRecordBatchReader* create_versioned_reader(const std::vector<int32_t>& versions) {
+  arrow::StringBuilder key_builder;
+  arrow::Int32Builder version_builder;
+
+  for (size_t i = 0; i < versions.size(); i++) {
+    REQUIRE(key_builder.Append("key_" + std::to_string(i)).ok());
+    REQUIRE(version_builder.Append(versions[i]).ok());
+  }
+
+  std::shared_ptr<arrow::Array> key_array, version_array;
+  REQUIRE(key_builder.Finish(&key_array).ok());
+  REQUIRE(version_builder.Finish(&version_array).ok());
+
+  auto batch = arrow::RecordBatch::Make(create_versioned_schema(),
+      static_cast<int64_t>(versions.size()), {key_array, version_array});
+  return create_reader_from_batch(batch);
+}
+
+// Read the "version" column of the row with the given key
+static int32_t version_value(LanceDBTable* table, const std::string& key) {
+  LanceDBQuery* query = lancedb_query_new(table);
+  REQUIRE(query != nullptr);
+
+  char* error_message = nullptr;
+  const auto filter = "key = '" + key + "'";
+  REQUIRE(lancedb_query_where_filter(query, filter.c_str(), &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+
+  LanceDBQueryResult* query_result = lancedb_query_execute(query);
+  REQUIRE(query_result != nullptr);
+
+  FFI_ArrowArray** result_arrays = nullptr;
+  FFI_ArrowSchema* result_schema = nullptr;
+  size_t count = 0;
+  REQUIRE(lancedb_query_result_to_arrow(
+      query_result, &result_arrays, &result_schema, &count, &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(count == 1);
+
+  auto imported_schema = arrow::ImportSchema(reinterpret_cast<ArrowSchema*>(result_schema));
+  REQUIRE(imported_schema.ok());
+  auto imported_batch = arrow::ImportRecordBatch(
+      reinterpret_cast<ArrowArray*>(result_arrays[0]), imported_schema.ValueUnsafe());
+  REQUIRE(imported_batch.ok());
+
+  auto batch = imported_batch.ValueUnsafe();
+  REQUIRE(batch->num_rows() == 1);
+  auto version_array = std::static_pointer_cast<arrow::Int32Array>(batch->column(1));
+  const auto value = version_array->Value(0);
+
+  lancedb_free_arrow_arrays(result_arrays, count);
+  lancedb_free_arrow_schema(result_schema);
+
+  return value;
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert with source condition", "[table]") {
+  const std::string table_name = "test_merge_insert_source_table";
+
+  // Create a table where all 5 keys are at version 10
+  auto schema = create_versioned_schema();
+  struct ArrowSchema c_schema;
+  REQUIRE(arrow::ExportSchema(*schema, &c_schema).ok());
+
+  LanceDBTable* table = nullptr;
+  char* error_message = nullptr;
+  REQUIRE(lancedb_table_create(
+      db, table_name.c_str(), reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
+      create_versioned_reader({10, 10, 10, 10, 10}), &table, &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(table != nullptr);
+  if (c_schema.release) {
+    c_schema.release(&c_schema);
+  }
+
+  // Merge newer versions for key_0 and key_1, and older ones for the rest
+  const std::vector<int32_t> merged_versions = {11, 12, 9, 8, 10};
+  const char* on_columns[] = {"key"};
+
+  SECTION("Update only rows where the merged version is newer, using an SQL condition") {
+    auto merge_reader = create_versioned_reader(merged_versions);
+    REQUIRE(merge_reader != nullptr);
+
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = "target.version < source.version",
+      .when_matched_update_all_expr = nullptr
+    };
+
+    error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // Only the rows with a newer version in the merged data were updated
+    REQUIRE(version_value(table, "key_0") == 11);
+    REQUIRE(version_value(table, "key_1") == 12);
+    REQUIRE(version_value(table, "key_2") == 10);
+    REQUIRE(version_value(table, "key_3") == 10);
+    REQUIRE(version_value(table, "key_4") == 10);
+  }
+
+  SECTION("Update only rows where the merged version is newer, using a DataFusion expression") {
+    auto merge_reader = create_versioned_reader(merged_versions);
+    REQUIRE(merge_reader != nullptr);
+
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("target.version"),
+        LANCEDB_BINARY_OP_LT,
+        lancedb_expr_column("source.version"));
+    REQUIRE(expr != nullptr);
+
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = expr
+    };
+
+    error_message = nullptr;
+    LanceDBError result = lancedb_table_merge_insert(
+        table, merge_reader, on_columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    lancedb_expr_free(expr);
+
+    // Only the rows with a newer version in the merged data were updated
+    REQUIRE(version_value(table, "key_0") == 11);
+    REQUIRE(version_value(table, "key_1") == 12);
+    REQUIRE(version_value(table, "key_2") == 10);
+    REQUIRE(version_value(table, "key_3") == 10);
+    REQUIRE(version_value(table, "key_4") == 10);
   }
 
   lancedb_table_free(table);
