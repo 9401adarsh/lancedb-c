@@ -82,7 +82,7 @@
 {
    lance_index_plugin_registry
    Memcheck:Leak
-   match-leak-kinds: possible
+   match-leak-kinds: possible,definite
    fun:*
    ...
    fun:*IndexPluginRegistry*
@@ -130,6 +130,18 @@
    fun:*
    ...
    fun:*uuid*fmt*
+   ...
+}
+
+# Rust std allocates the Thread handle on the first access to a thread local
+# (e.g. when the fastrand global RNG is seeded), and releases it on thread exit
+{
+   rust_std_thread_current_init
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:malloc
+   ...
+   fun:*init_current*
    ...
 }
 
