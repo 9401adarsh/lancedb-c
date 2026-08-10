@@ -82,6 +82,45 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Creation", "[table]") {
     lancedb_table_free(reopened_table);
   }
 
+  SECTION("Create table with invalid name should fail") {
+    auto schema = create_test_schema();
+    auto batch = create_test_record_batch(5, 0);
+    auto reader = create_reader_from_batch(batch);
+    REQUIRE(reader != nullptr);
+
+    struct ArrowSchema c_schema;
+    REQUIRE(arrow::ExportSchema(*schema, &c_schema).ok());
+
+    LanceDBTable* table = nullptr;
+    char* error_message = nullptr;
+
+    LanceDBError result = lancedb_table_create(
+        db,
+        "invalid table name",
+        reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
+        reader,
+        &table,
+        &error_message
+    );
+
+    REQUIRE(result == LANCEDB_INVALID_TABLE_NAME);
+    REQUIRE(table == nullptr);
+
+    // Note: Reader was consumed by lancedb_table_create even on failure
+
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+
+    // Opening a table with an invalid name fails as well
+    REQUIRE(lancedb_connection_open_table(db, "invalid table name") == nullptr);
+
+    // Clean up schema
+    if (c_schema.release) {
+      c_schema.release(&c_schema);
+    }
+  }
+
   SECTION("Create table that already exists should fail") {
     const std::string table_name = "duplicate_table";
 

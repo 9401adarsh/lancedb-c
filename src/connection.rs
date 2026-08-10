@@ -15,6 +15,7 @@ use lance_namespace::models::{
     CreateNamespaceRequest, DropNamespaceRequest, ListNamespacesRequest,
 };
 use lancedb::connection::{connect, ConnectBuilder, Connection, TableNamesBuilder};
+use lancedb::utils::validate_table_name;
 use lancedb::Table;
 
 use crate::error::{
@@ -599,6 +600,10 @@ pub unsafe extern "C" fn lancedb_table_create(
             reader_box.into_inner()
         };
 
+        // lancedb panics on an invalid table name instead of returning an error,
+        // so the name is validated before the table is created
+        validate_table_name(table_name_str)?;
+
         conn.create_table(table_name_str, batch_reader)
             .execute()
             .await
@@ -922,6 +927,12 @@ pub unsafe extern "C" fn lancedb_connection_open_table(
     let Ok(table_name_str) = CStr::from_ptr(table_name).to_str() else {
         return ptr::null_mut();
     };
+
+    // lancedb panics on an invalid table name instead of returning an error,
+    // so the name is validated before the table is opened
+    if validate_table_name(table_name_str).is_err() {
+        return ptr::null_mut();
+    }
 
     let conn = &(*connection).inner;
     let runtime = get_runtime();
