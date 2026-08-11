@@ -584,10 +584,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Metadata - invalid arguments", "
     REQUIRE(count_out == 0);
   }
 
-  SECTION("Listing versions with invalid arguments should fail") {
+  SECTION("Listing versions without a count should fail") {
     LanceDBVersion* versions = nullptr;
     LanceDBVersionMetadata* metadata = nullptr;
-    size_t count = 0;
 
     REQUIRE(lancedb_table_list_versions(
         table, &versions, &metadata, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);

@@ -202,8 +202,7 @@ int main() {
   // define a scalar index on the "key" column
   const char* key_columns[] = {"key"};
   LanceDBScalarIndexConfig scalar_config = {
-    .replace = 1,                    // replace existing index
-    .force_update_statistics = 0     // don't force update statistics
+    .replace = 1                     // replace existing index
   };
   if (const LanceDBError result = lancedb_table_create_scalar_index(
         tbl, key_columns, 1, LANCEDB_INDEX_BTREE, &scalar_config, nullptr); result != LANCEDB_SUCCESS) {
@@ -293,7 +292,6 @@ int main() {
     .max_iterations = -1,            // default
     .sample_rate = 0.0f,             // default
     .distance_type = LANCEDB_DISTANCE_L2,  // L2 distance
-    .accelerator = nullptr,          // CPU
     .replace = 1                     // replace existing index
   };
   if (const LanceDBError result = lancedb_table_create_vector_index(
@@ -306,8 +304,7 @@ int main() {
   // define bitmap indices on the tag columns
   const char* tag_columns[] = {"tag1", "tag2", "tag3"};
   LanceDBScalarIndexConfig bitmap_config = {
-    .replace = 1,                    // replace existing index
-    .force_update_statistics = 0     // don't force update statistics
+    .replace = 1                     // replace existing index
   };
   for (size_t i = 0; i < 3; i++) {
     if (const LanceDBError result = lancedb_table_create_scalar_index(

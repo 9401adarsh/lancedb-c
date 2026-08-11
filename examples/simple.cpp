@@ -159,7 +159,6 @@ void create_index(LanceDBTable* tbl) {
     .max_iterations = -1,            // default
     .sample_rate = 0.0f,             // default
     .distance_type = LANCEDB_DISTANCE_L2,  // L2 distance
-    .accelerator = nullptr,          // CPU
     .replace = 1                     // replace existing index
   };
   if (const LanceDBError result = lancedb_table_create_vector_index(

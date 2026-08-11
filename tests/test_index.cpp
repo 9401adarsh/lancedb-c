@@ -16,8 +16,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create BTREE index on the "key" column
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -69,8 +69,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create BTREE index on the "key" column
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -121,8 +121,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create initial BTREE index
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -171,8 +171,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index Stats", "[index]") {
 
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -213,8 +213,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index Stats", "[index]") {
 
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -315,8 +315,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index List and Drop", "[index]"
     // Create BTREE index
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -417,7 +417,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB FTS Index", "[index]") {
     LanceDBFtsIndexConfig config = {
       .base_tokenizer = "simple",
       .language = "English",
-      .max_tokens = 100,
+      .max_token_length = 100,
       .lowercase = 1,
       .stem = 1,
       .remove_stop_words = 1,
@@ -443,7 +443,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB FTS Index", "[index]") {
     LanceDBFtsIndexConfig config = {
       .base_tokenizer = nullptr,
       .language = nullptr,
-      .max_tokens = -1,
+      .max_token_length = -1,
       .lowercase = 1,
       .stem = 0,
       .remove_stop_words = 0,
@@ -475,7 +475,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB FTS Index", "[index]") {
     LanceDBFtsIndexConfig config = {
       .base_tokenizer = nullptr,
       .language = "Klingon",
-      .max_tokens = -1,
+      .max_token_length = -1,
       .lowercase = 1,
       .stem = 0,
       .remove_stop_words = 0,
@@ -571,8 +571,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index - invalid arguments", "[index]")
   const char* null_columns[] = {nullptr};
   const char* invalid_columns[] = {INVALID_UTF8};
   LanceDBScalarIndexConfig config = {
-    .replace = 1,
-    .force_update_statistics = 0
+    .replace = 1
+
   };
 
   SECTION("Scalar index with invalid arguments should fail") {

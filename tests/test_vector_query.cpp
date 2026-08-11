@@ -233,7 +233,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Query - nearest_to with IVF_FLA
     .max_iterations = -1,
     .sample_rate = 0.0f,
     .distance_type = LANCEDB_DISTANCE_L2,
-    .accelerator = nullptr,
     .replace = 0
   };
 
@@ -342,7 +341,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Query - configuration parameter
     .max_iterations = -1,
     .sample_rate = 0.0f,
     .distance_type = LANCEDB_DISTANCE_L2,
-    .accelerator = nullptr,
     .replace = 0
   };
 
@@ -635,7 +633,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Query - HNSW parameters", "[vec
     .max_iterations = -1,
     .sample_rate = 0.0f,
     .distance_type = LANCEDB_DISTANCE_L2,
-    .accelerator = nullptr,
     .replace = 0
   };
 
@@ -1113,7 +1110,6 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Vector Query - repeated queries
     .max_iterations = -1,
     .sample_rate = 0.0f,
     .distance_type = LANCEDB_DISTANCE_L2,
-    .accelerator = nullptr,
     .replace = 0
   };
 

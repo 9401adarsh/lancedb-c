@@ -21,7 +21,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -78,7 +77,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -118,7 +116,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -158,7 +155,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -199,7 +195,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -231,7 +226,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -270,7 +264,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index List and Drop", "[vector_
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -324,8 +317,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index List and Drop", "[vector_
     // Create BTREE index on key column
     const char* scalar_columns[] = {"key"};
     LanceDBScalarIndexConfig scalar_config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -343,7 +336,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index List and Drop", "[vector_
       .max_iterations = -1,
       .sample_rate = 0.0f,
       .distance_type = LANCEDB_DISTANCE_L2,
-      .accelerator = nullptr,
       .replace = 0
     };
 
@@ -413,7 +405,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index - explicit tuning paramet
     .max_iterations = 2,
     .sample_rate = 64.0f,
     .distance_type = LANCEDB_DISTANCE_COSINE,
-    .accelerator = nullptr,
     .replace = 1
   };
 

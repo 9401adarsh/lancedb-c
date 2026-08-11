@@ -39,8 +39,8 @@ void create_key_index(LanceDBTable* table) {
   // Create BTREE index on "key" column
   const char* index_columns[] = {"key"};
   LanceDBScalarIndexConfig config = {
-    .replace = 0,
-    .force_update_statistics = 0
+    .replace = 0
+
   };
 
   char* error_message = nullptr;
