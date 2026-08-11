@@ -134,9 +134,12 @@ configure_file(lancedb.pc.in "${CMAKE_BINARY_DIR}/lancedb.pc" @ONLY)
   set(CARGO_BUILD_COMMAND cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
 if(BUILD_COVERAGE)
   set(PROFRAW_DIR "${CMAKE_BINARY_DIR}/profraw")
+  set(BUILD_PROFRAW_DIR "${PROFRAW_DIR}/build")
+  file(MAKE_DIRECTORY "${PROFRAW_DIR}" "${BUILD_PROFRAW_DIR}")
+  set(BUILD_PROFRAW_ENV "LLVM_PROFILE_FILE=${BUILD_PROFRAW_DIR}/%p_%m.profraw")
   # Use CARGO_ENCODED_RUSTFLAGS (0x1f-separated) instead of RUSTFLAGS
   # so that Cargo includes it in its fingerprint and triggers a rebuild
-  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${CARGO_BUILD_COMMAND})
+  set(CARGO_BUILD_COMMAND ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" "${BUILD_PROFRAW_ENV}" ${CARGO_BUILD_COMMAND})
 endif()
 add_custom_target(rust-lib ALL
   COMMAND ${CARGO_BUILD_COMMAND}
@@ -215,7 +218,7 @@ if(BUILD_EXAMPLES)
   # external_provider helper crate (provides external_object_store_provider_create)
   set(EXT_PROVIDER_CARGO_CMD cargo build ${RUST_BUILD_TYPE} ${RUST_TARGET_OPT} --target-dir "${CMAKE_BINARY_DIR}/target")
   if(BUILD_COVERAGE)
-    set(EXT_PROVIDER_CARGO_CMD ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" ${EXT_PROVIDER_CARGO_CMD})
+    set(EXT_PROVIDER_CARGO_CMD ${CMAKE_COMMAND} -E env "CARGO_ENCODED_RUSTFLAGS=-Cinstrument-coverage" "${BUILD_PROFRAW_ENV}" ${EXT_PROVIDER_CARGO_CMD})
   endif()
   if(WIN32)
     set(EXT_PROVIDER_SHARED_PATH "${RUST_TARGET_DIR}/lancedb_external_provider${CMAKE_SHARED_LIBRARY_SUFFIX}")
