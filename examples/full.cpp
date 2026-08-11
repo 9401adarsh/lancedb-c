@@ -530,7 +530,9 @@ int main() {
             std::array<const char*, 1> on_columns = {"key"};
             //
             const LanceDBMergeInsertConfig config{.when_matched_update_all = 1,
-              .when_not_matched_insert_all = 1};
+              .when_not_matched_insert_all = 1,
+              .when_matched_update_all_condition = nullptr,
+              .when_matched_update_all_expr = nullptr};
             if (const LanceDBError result = lancedb_table_merge_insert(
                   tbl,
                   batch_reader,

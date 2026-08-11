@@ -2,7 +2,7 @@
 
 [package]
 name = "lancedb-c"
-version = "0.30.0"
+version = "0.33.0"
 edition = "2021"
 description = "C bindings for LanceDB"
 license = "Apache-2.0"
@@ -18,19 +18,19 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 tokio = { version = "1.23", features = ["rt-multi-thread"] }
 libc = "0.2"
-lancedb = { version = "0.30.0", features = ["remote"] }
-lance = "=7.0.0"
-lance-io = "=7.0.0"
-lance-namespace = "=7.0.0"
+lancedb = { version = "0.33.0", features = ["remote"] }
+lance = "=9.0.0"
+lance-io = "=9.0.0"
+lance-namespace = "=9.0.0"
 arrow-array = "58.0"
 arrow-data = "58.0"
 arrow-schema = "58.0"
-datafusion-common = "53"
-datafusion-expr = "53"
-datafusion-functions-json = "0.53"
-datafusion-functions = { version = "53", default-features = false, features = ["string_expressions"] }
-datafusion-functions-nested = "53"
-datafusion-physical-expr = "53"
+datafusion-common = "54"
+datafusion-expr = "54"
+datafusion-functions-json = "0.54"
+datafusion-functions = { version = "54", default-features = false, features = ["string_expressions"] }
+datafusion-functions-nested = "54"
+datafusion-physical-expr = "54"
 futures = "0"
 stacker = "0.1"
 chrono = "0"

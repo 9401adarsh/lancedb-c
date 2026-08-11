@@ -658,7 +658,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr Type Mismatches", "[query
 
   SECTION("Comparison between string literal and float literal") {
     // Build expr: "hello" > 3.14
-    // DataFusion coerces types, so the query succeeds
+    // the string is cast to a float, which fails since it does not hold a number
     LanceDBExpr* expr = lancedb_expr_binary(
         lancedb_expr_literal_string("hello"),
         LANCEDB_BINARY_OP_GT,
@@ -677,10 +677,9 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - Expr Type Mismatches", "[query
     REQUIRE(result == LANCEDB_SUCCESS);
     REQUIRE(error_message == nullptr);
 
-    // DataFusion coerces and evaluates this - query succeeds
+    // Should fail at execution due to the cast error
     LanceDBQueryResult* query_result = lancedb_query_execute(query);
-    REQUIRE(query_result != nullptr);
-    lancedb_query_result_free(query_result);
+    REQUIRE(query_result == nullptr);
   }
 
   SECTION("IN list with float literal against vector column") {

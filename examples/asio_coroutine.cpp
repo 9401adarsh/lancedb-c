@@ -111,6 +111,8 @@ void do_upsert(LanceDBTable* tbl, int num_vectors, boost::asio::yield_context /*
     const LanceDBMergeInsertConfig config{
       .when_matched_update_all = 1,
       .when_not_matched_insert_all = 1,
+      .when_matched_update_all_condition = nullptr,
+      .when_matched_update_all_expr = nullptr,
     };
 
     char* err = nullptr;

@@ -250,10 +250,19 @@ typedef struct {
 
 /**
  * Merge insert configuration
+ *
+ * The conditions restricting which matched records are updated are only used when
+ * when_matched_update_all is set, and are otherwise ignored. The SQL condition and the
+ * DataFusion expression are mutually exclusive: when matched records are updated, setting
+ * both of them fails with LANCEDB_INVALID_ARGUMENT.
+ * In both flavors, use the prefix "target." to refer to rows in the table, and the prefix
+ * "source." to refer to rows in the merged data. For example: "target.version < source.version"
  */
 typedef struct {
     int when_matched_update_all;     // Update all columns for matched records (1 = true, 0 = false)
     int when_not_matched_insert_all; // Insert all new records (1 = true, 0 = false)
+    const char* when_matched_update_all_condition;   // SQL condition on the updated records (NULL for no condition)
+    LanceDBExpr* when_matched_update_all_expr;       // DataFusion condition on the updated records (NULL for no condition)
 } LanceDBMergeInsertConfig;
 
 /**
@@ -863,6 +872,8 @@ LanceDBError lancedb_table_add(
  * New records are inserted, existing records can be updated based on configuration.
  * This function takes ownership of the reader and frees it automatically.
  * Do NOT call lancedb_record_batch_reader_free() after calling this function.
+ * The expression in the config is not consumed, and must still be freed by the caller
+ * with lancedb_expr_free().
  * If error_message is provided and an error occurs, the caller must free
  * the error message with lancedb_free_string().
  */

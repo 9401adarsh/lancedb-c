@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lancedb = { package = "lancedb-c", path = "../.." }
-lance-io = { version = "=7.0.0", default-features = false }
+lance-io = { version = "=9.0.0", default-features = false }
