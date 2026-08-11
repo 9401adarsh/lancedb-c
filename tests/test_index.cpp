@@ -16,8 +16,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create BTREE index on the "key" column
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -69,8 +69,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create BTREE index on the "key" column
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -121,8 +121,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
     // Create initial BTREE index
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -171,8 +171,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index Stats", "[index]") {
 
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -213,8 +213,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index Stats", "[index]") {
 
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -315,8 +315,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index List and Drop", "[index]"
     // Create BTREE index
     const char* columns[] = {"key"};
     LanceDBScalarIndexConfig config = {
-      .replace = 0,
-      .force_update_statistics = 0
+      .replace = 0
+
     };
 
     char* error_message = nullptr;
@@ -382,3 +382,260 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index List and Drop", "[index]"
   }
 }
 
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB FTS Index", "[index]") {
+  const std::string table_name = "fts_index_test";
+
+  SECTION("Create FTS index with default configuration") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    const char* columns[] = {"key"};
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_create_fts_index(
+        table, columns, 1, nullptr, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // The index is listed on the table
+    char** indices = nullptr;
+    size_t count = 0;
+    result = lancedb_table_list_indices(table, &indices, &count, &error_message);
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 1);
+    lancedb_free_index_list(indices, count);
+
+    lancedb_table_free(table);
+  }
+
+  SECTION("Create FTS index with full configuration") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    const char* columns[] = {"key"};
+    LanceDBFtsIndexConfig config = {
+      .base_tokenizer = "simple",
+      .language = "English",
+      .max_token_length = 100,
+      .lowercase = 1,
+      .stem = 1,
+      .remove_stop_words = 1,
+      .ascii_folding = 1,
+      .replace = 1
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_create_fts_index(
+        table, columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    lancedb_table_free(table);
+  }
+
+  SECTION("Create FTS index without replacing an existing one should fail") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    const char* columns[] = {"key"};
+    LanceDBFtsIndexConfig config = {
+      .base_tokenizer = nullptr,
+      .language = nullptr,
+      .max_token_length = -1,
+      .lowercase = 1,
+      .stem = 0,
+      .remove_stop_words = 0,
+      .ascii_folding = 0,
+      .replace = 0
+    };
+
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_fts_index(
+        table, columns, 1, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // Creating the index again without replace is rejected
+    LanceDBError result = lancedb_table_create_fts_index(
+        table, columns, 1, &config, &error_message);
+    REQUIRE(result != LANCEDB_SUCCESS);
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+
+    lancedb_table_free(table);
+  }
+
+  SECTION("Create FTS index with an unknown language should fail") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    const char* columns[] = {"key"};
+    LanceDBFtsIndexConfig config = {
+      .base_tokenizer = nullptr,
+      .language = "Klingon",
+      .max_token_length = -1,
+      .lowercase = 1,
+      .stem = 0,
+      .remove_stop_words = 0,
+      .ascii_folding = 0,
+      .replace = 1
+    };
+
+    char* error_message = nullptr;
+    LanceDBError result = lancedb_table_create_fts_index(
+        table, columns, 1, &config, &error_message);
+
+    REQUIRE(result == LANCEDB_INVALID_ARGUMENT);
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+
+    lancedb_table_free(table);
+  }
+
+  SECTION("Create FTS index with invalid arguments should fail") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    const char* columns[] = {"key"};
+    const char* null_columns[] = {nullptr};
+
+    REQUIRE(lancedb_table_create_fts_index(
+        nullptr, columns, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_fts_index(
+        table, nullptr, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_fts_index(
+        table, columns, 0, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_fts_index(
+        table, null_columns, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    lancedb_table_free(table);
+  }
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Optimize", "[index]") {
+  const std::string table_name = "optimize_test";
+
+  SECTION("Optimize with all the optimization types") {
+    LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+    REQUIRE(table != nullptr);
+
+    // Add more data, so that there is something to compact
+    auto reader = create_reader_from_batch(create_test_record_batch(20, 20));
+    REQUIRE(reader != nullptr);
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_add(table, reader, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    const LanceDBOptimizeType types[] = {
+      LANCEDB_OPTIMIZE_COMPACT,
+      LANCEDB_OPTIMIZE_INDEX,
+      LANCEDB_OPTIMIZE_PRUNE,
+      LANCEDB_OPTIMIZE_ALL
+    };
+
+    for (const auto type : types) {
+      error_message = nullptr;
+      REQUIRE(lancedb_table_optimize(table, type, &error_message) == LANCEDB_SUCCESS);
+      REQUIRE(error_message == nullptr);
+    }
+
+    // No rows were lost by the optimizations
+    REQUIRE(lancedb_table_count_rows(table) == 40);
+
+    lancedb_table_free(table);
+  }
+
+  SECTION("Optimize with null table should fail") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_optimize(
+        nullptr, LANCEDB_OPTIMIZE_ALL, &error_message) == LANCEDB_INVALID_ARGUMENT);
+
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+  }
+}
+
+// A string that is not valid UTF-8, to exercise the string conversion failures
+static const char* const INVALID_UTF8 = "\xff\xfe";
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Index - invalid arguments", "[index]") {
+  const std::string table_name = "index_invalid_args_test";
+  LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+  REQUIRE(table != nullptr);
+
+  const char* columns[] = {"key"};
+  const char* null_columns[] = {nullptr};
+  const char* invalid_columns[] = {INVALID_UTF8};
+  LanceDBScalarIndexConfig config = {
+    .replace = 1
+
+  };
+
+  SECTION("Scalar index with invalid arguments should fail") {
+    REQUIRE(lancedb_table_create_scalar_index(
+        nullptr, columns, 1, LANCEDB_INDEX_BTREE, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, nullptr, 1, LANCEDB_INDEX_BTREE, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, columns, 0, LANCEDB_INDEX_BTREE, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, null_columns, 1, LANCEDB_INDEX_BTREE, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, invalid_columns, 1, LANCEDB_INDEX_BTREE, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    // A vector index type is not a scalar index type
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, columns, 1, LANCEDB_INDEX_IVF_FLAT, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Scalar index of every supported type") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, columns, 1, LANCEDB_INDEX_BITMAP, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, columns, 1, LANCEDB_INDEX_BTREE, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    // Only the scalar index types are supported, AUTO is not one of them
+    REQUIRE(lancedb_table_create_scalar_index(
+        table, columns, 1, LANCEDB_INDEX_AUTO, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("FTS index with an invalid column name should fail") {
+    REQUIRE(lancedb_table_create_fts_index(
+        table, invalid_columns, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Listing indices with invalid arguments should fail") {
+    char** indices = nullptr;
+    size_t count = 0;
+
+    REQUIRE(lancedb_table_list_indices(
+        nullptr, &indices, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_list_indices(
+        table, nullptr, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_list_indices(
+        table, &indices, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    // Freeing an empty index list is safe
+    lancedb_free_index_list(nullptr, 0);
+  }
+
+  SECTION("Dropping an index with invalid arguments should fail") {
+    REQUIRE(lancedb_table_drop_index(nullptr, "idx", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_drop_index(table, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_drop_index(table, INVALID_UTF8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Index statistics with invalid arguments should fail") {
+    LanceDBIndexStats stats = {};
+    REQUIRE(lancedb_table_index_stats(table, nullptr, &stats, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_index_stats(table, "idx", nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_index_stats(table, INVALID_UTF8, &stats, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  lancedb_table_free(table);
+}

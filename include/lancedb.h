@@ -222,7 +222,6 @@ typedef struct {
     int max_iterations;         // Maximum training iterations (-1 = default)
     float sample_rate;          // Sampling rate for training (0.0 = default)
     LanceDBDistanceType distance_type; // Distance metric
-    const char* accelerator;    // GPU accelerator ("cuda", "mps", or NULL for CPU)
     int replace;               // Replace existing index (1 = true, 0 = false)
 } LanceDBVectorIndexConfig;
 
@@ -231,7 +230,6 @@ typedef struct {
  */
 typedef struct {
     int replace;                      // Replace existing index (1 = true, 0 = false)
-    int force_update_statistics;      // Force update statistics (1 = true, 0 = false)
 } LanceDBScalarIndexConfig;
 
 /**
@@ -240,7 +238,7 @@ typedef struct {
 typedef struct {
     const char* base_tokenizer;   // Base tokenizer ("simple", "whitespace", etc.)
     const char* language;         // Language for stemming ("en", "es", etc.)
-    int max_tokens;              // Maximum tokens per document (-1 = no limit)
+    int max_token_length;        // Maximum length of a token (-1 = no limit)
     int lowercase;               // Convert to lowercase (1 = true, 0 = false)
     int stem;                    // Apply stemming (1 = true, 0 = false)
     int remove_stop_words;       // Remove stop words (1 = true, 0 = false)

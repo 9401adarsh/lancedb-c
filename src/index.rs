@@ -47,7 +47,6 @@ pub struct LanceDBVectorIndexConfig {
     pub max_iterations: c_int, // Maximum training iterations (-1 = default)
     pub sample_rate: c_float,  // Sampling rate for training (0.0 = default)
     pub distance_type: LanceDBDistanceType, // Distance metric
-    pub accelerator: *const c_char, // GPU accelerator ("cuda", "mps", or NULL for CPU)
     pub replace: c_int,        // Replace existing index (1 = true, 0 = false)
 }
 
@@ -59,7 +58,6 @@ impl Default for LanceDBVectorIndexConfig {
             max_iterations: -1,
             sample_rate: 0.0,
             distance_type: LanceDBDistanceType::L2,
-            accelerator: ptr::null(),
             replace: 1,
         }
     }
@@ -69,16 +67,12 @@ impl Default for LanceDBVectorIndexConfig {
 #[repr(C)]
 #[derive(Clone)]
 pub struct LanceDBScalarIndexConfig {
-    pub replace: c_int,                 // Replace existing index (1 = true, 0 = false)
-    pub force_update_statistics: c_int, // Force update statistics (1 = true, 0 = false)
+    pub replace: c_int, // Replace existing index (1 = true, 0 = false)
 }
 
 impl Default for LanceDBScalarIndexConfig {
     fn default() -> Self {
-        Self {
-            replace: 1,
-            force_update_statistics: 0,
-        }
+        Self { replace: 1 }
     }
 }
 
@@ -88,7 +82,7 @@ impl Default for LanceDBScalarIndexConfig {
 pub struct LanceDBFtsIndexConfig {
     pub base_tokenizer: *const c_char, // Base tokenizer ("simple", "whitespace", etc.)
     pub language: *const c_char,       // Language for stemming ("en", "es", etc.)
-    pub max_tokens: c_int,             // Maximum tokens per document (-1 = no limit)
+    pub max_token_length: c_int,       // Maximum length of a token (-1 = no limit)
     pub lowercase: c_int,              // Convert to lowercase (1 = true, 0 = false)
     pub stem: c_int,                   // Apply stemming (1 = true, 0 = false)
     pub remove_stop_words: c_int,      // Remove stop words (1 = true, 0 = false)
@@ -101,7 +95,7 @@ impl Default for LanceDBFtsIndexConfig {
         Self {
             base_tokenizer: ptr::null(),
             language: ptr::null(),
-            max_tokens: -1,
+            max_token_length: -1,
             lowercase: 1,
             stem: 0,
             remove_stop_words: 0,
@@ -190,8 +184,6 @@ pub unsafe extern "C" fn lancedb_table_create_vector_index(
             }
             builder = builder.distance_type(cfg.distance_type.into());
 
-            // Note: accelerator configuration is simplified
-            let _ = cfg.accelerator;
             Index::IvfFlat(builder)
         }
         LanceDBIndexType::IvfPq => {
@@ -210,8 +202,6 @@ pub unsafe extern "C" fn lancedb_table_create_vector_index(
             }
             builder = builder.distance_type(cfg.distance_type.into());
 
-            // Note: accelerator configuration is simplified
-            let _ = cfg.accelerator;
             Index::IvfPq(builder)
         }
         LanceDBIndexType::IvfHnswPq => {
@@ -230,8 +220,6 @@ pub unsafe extern "C" fn lancedb_table_create_vector_index(
             }
             builder = builder.distance_type(cfg.distance_type.into());
 
-            // Note: accelerator configuration is simplified
-            let _ = cfg.accelerator;
             Index::IvfHnswPq(builder)
         }
         LanceDBIndexType::IvfHnswSq => {
@@ -247,8 +235,6 @@ pub unsafe extern "C" fn lancedb_table_create_vector_index(
             }
             builder = builder.distance_type(cfg.distance_type.into());
 
-            // Note: accelerator configuration is simplified
-            let _ = cfg.accelerator;
             Index::IvfHnswSq(builder)
         }
         _ => {
@@ -326,8 +312,6 @@ pub unsafe extern "C" fn lancedb_table_create_scalar_index(
     let index = match index_type {
         LanceDBIndexType::BTree => {
             let builder = BTreeIndexBuilder::default();
-            // Note: force_update_statistics is not available in current API
-            let _ = cfg.force_update_statistics;
             Index::BTree(builder)
         }
         LanceDBIndexType::Bitmap => Index::Bitmap(BitmapIndexBuilder::default()),
@@ -423,10 +407,15 @@ pub unsafe extern "C" fn lancedb_table_create_fts_index(
         }
     }
 
-    // Note: Some FTS options are simplified in current implementation
-    let _ = cfg.max_tokens;
+    // a negative value leaves the token length unlimited
+    let max_token_length = if cfg.max_token_length < 0 {
+        None
+    } else {
+        Some(cfg.max_token_length as usize)
+    };
 
     builder = builder
+        .max_token_length(max_token_length)
         .lower_case(cfg.lowercase != 0)
         .stem(cfg.stem != 0)
         .remove_stop_words(cfg.remove_stop_words != 0)

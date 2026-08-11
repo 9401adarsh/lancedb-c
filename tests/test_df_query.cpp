@@ -39,8 +39,8 @@ static void create_key_index(LanceDBTable* table) {
   // Create BTREE index on "key" column
   const char* index_columns[] = {"key"};
   LanceDBScalarIndexConfig config = {
-    .replace = 0,
-    .force_update_statistics = 0
+    .replace = 0
+
   };
 
   char* error_message = nullptr;
@@ -423,12 +423,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DataFusion Expr Filter", "[que
   }
 
   SECTION("Expr builder NULL arguments") {
-    REQUIRE(lancedb_expr_column(nullptr) == nullptr);
-    REQUIRE(lancedb_expr_literal_string(nullptr) == nullptr);
     REQUIRE(lancedb_expr_binary(nullptr, LANCEDB_BINARY_OP_EQ, nullptr) == nullptr);
     REQUIRE(lancedb_expr_not(nullptr) == nullptr);
-    REQUIRE(lancedb_expr_is_null(nullptr) == nullptr);
-    REQUIRE(lancedb_expr_is_not_null(nullptr) == nullptr);
     REQUIRE(lancedb_expr_and(nullptr, nullptr) == nullptr);
     REQUIRE(lancedb_expr_or(nullptr, nullptr) == nullptr);
     REQUIRE(lancedb_expr_clone(nullptr) == nullptr);
@@ -1197,3 +1193,79 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - DF filter + JSON post-filter o
   lancedb_table_free(table);
 }
 
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Expr - builders and invalid arguments", "[query][expr]") {
+  // A string that is not valid UTF-8, to exercise the string conversion failures
+  const char* const invalid_utf8 = "\xff\xfe";
+
+  SECTION("Every binary operator builds an expression") {
+    const LanceDBBinaryOp ops[] = {
+      LANCEDB_BINARY_OP_EQ,
+      LANCEDB_BINARY_OP_NOT_EQ,
+      LANCEDB_BINARY_OP_LT,
+      LANCEDB_BINARY_OP_LT_EQ,
+      LANCEDB_BINARY_OP_GT,
+      LANCEDB_BINARY_OP_GT_EQ,
+      LANCEDB_BINARY_OP_AND,
+      LANCEDB_BINARY_OP_OR,
+      LANCEDB_BINARY_OP_PLUS,
+      LANCEDB_BINARY_OP_MINUS,
+      LANCEDB_BINARY_OP_MULTIPLY,
+      LANCEDB_BINARY_OP_DIVIDE,
+      LANCEDB_BINARY_OP_MODULO
+    };
+
+    for (const auto op : ops) {
+      LanceDBExpr* expr = lancedb_expr_binary(
+          lancedb_expr_column("value"), op, lancedb_expr_literal_i64(1));
+      REQUIRE(expr != nullptr);
+      lancedb_expr_free(expr);
+    }
+  }
+
+  SECTION("Null checks build expressions") {
+    LanceDBExpr* is_null = lancedb_expr_is_null(lancedb_expr_column("key"));
+    REQUIRE(is_null != nullptr);
+    lancedb_expr_free(is_null);
+
+    LanceDBExpr* is_not_null = lancedb_expr_is_not_null(lancedb_expr_column("key"));
+    REQUIRE(is_not_null != nullptr);
+    lancedb_expr_free(is_not_null);
+
+    REQUIRE(lancedb_expr_is_null(nullptr) == nullptr);
+    REQUIRE(lancedb_expr_is_not_null(nullptr) == nullptr);
+  }
+
+  SECTION("Expression builders with invalid arguments return no expression") {
+    REQUIRE(lancedb_expr_column(nullptr) == nullptr);
+    REQUIRE(lancedb_expr_column(invalid_utf8) == nullptr);
+    REQUIRE(lancedb_expr_literal_string(nullptr) == nullptr);
+    REQUIRE(lancedb_expr_literal_string(invalid_utf8) == nullptr);
+    REQUIRE(lancedb_expr_in_list(nullptr, nullptr, 0, false, nullptr) == nullptr);
+  }
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB JSON matches - invalid arguments", "[json][expr]") {
+  bool* results = nullptr;
+  size_t count = 1;
+
+  SECTION("Evaluating without batches should fail") {
+    LanceDBExpr* expr = lancedb_expr_binary(
+        lancedb_expr_column("key"),
+        LANCEDB_BINARY_OP_EQ,
+        lancedb_expr_literal_string("key_0"));
+    REQUIRE(expr != nullptr);
+
+    // The expression is consumed even when the other arguments are rejected
+    REQUIRE(lancedb_json_matches(
+        nullptr, nullptr, 0, expr, &results, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Evaluating without an expression should fail") {
+    REQUIRE(lancedb_json_matches(
+        nullptr, nullptr, 0, nullptr, &results, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Freeing an empty result array is safe") {
+    lancedb_free_json_matches(nullptr);
+  }
+}
