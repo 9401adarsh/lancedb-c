@@ -1480,3 +1480,135 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Table CRUD with same session ac
   REQUIRE(table_a == nullptr);
   REQUIRE(table_b == nullptr);
 }
+
+// A string that is not valid UTF-8, to exercise the string conversion failures
+static const char* const INVALID_UTF8_STR = "\xff\xfe";
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table - invalid arguments", "[table]") {
+  const std::string table_name = "table_invalid_args_test";
+  LanceDBTable* table = create_table_with_data(table_name, 10, 0);
+  REQUIRE(table != nullptr);
+
+  SECTION("Table accessors with null table") {
+    REQUIRE(lancedb_table_version(nullptr) == 0);
+    REQUIRE(lancedb_table_count_rows(nullptr) == 0);
+    REQUIRE(lancedb_table_delete(nullptr, "key = 'key_0'", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_delete(table, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_delete(table, INVALID_UTF8_STR, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Merge insert with invalid column names should fail") {
+    const char* null_columns[] = {nullptr};
+    const char* invalid_columns[] = {INVALID_UTF8_STR};
+
+    auto reader = create_reader_from_batch(create_test_record_batch(3, 0));
+    REQUIRE(reader != nullptr);
+    REQUIRE(lancedb_table_merge_insert(
+        table, reader, null_columns, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    reader = create_reader_from_batch(create_test_record_batch(3, 0));
+    REQUIRE(reader != nullptr);
+    REQUIRE(lancedb_table_merge_insert(
+        table, reader, invalid_columns, 1, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Merge insert with an invalid condition string should fail") {
+    const char* on_columns[] = {"key"};
+    LanceDBMergeInsertConfig config = {
+      .when_matched_update_all = 1,
+      .when_not_matched_insert_all = 0,
+      .when_matched_update_all_condition = INVALID_UTF8_STR,
+      .when_matched_update_all_expr = nullptr
+    };
+
+    auto reader = create_reader_from_batch(create_test_record_batch(3, 0));
+    REQUIRE(reader != nullptr);
+    REQUIRE(lancedb_table_merge_insert(
+        table, reader, on_columns, 1, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Vector search with invalid arguments should fail") {
+    const std::vector<float> vector(TEST_SCHEMA_DIMENSIONS, 1.0F);
+    FFI_ArrowArray** arrays = nullptr;
+    FFI_ArrowSchema* schema = nullptr;
+    size_t count = 0;
+
+    REQUIRE(lancedb_table_nearest_to(
+        nullptr, vector.data(), vector.size(), 5, "data", &arrays, &schema, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, nullptr, vector.size(), 5, "data", &arrays, &schema, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, vector.data(), 0, 5, "data", &arrays, &schema, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, vector.data(), vector.size(), 0, "data", &arrays, &schema, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, vector.data(), vector.size(), 5, "data", nullptr, &schema, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, vector.data(), vector.size(), 5, "data", &arrays, nullptr, &count, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_nearest_to(
+        table, vector.data(), vector.size(), 5, "data", &arrays, &schema, nullptr, nullptr)
+        == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Vector search on an empty table returns no results") {
+    const std::string empty_name = "empty_nearest_to_test";
+    create_empty_table(empty_name);
+    LanceDBTable* empty_table = lancedb_connection_open_table(db, empty_name.c_str());
+    REQUIRE(empty_table != nullptr);
+
+    const std::vector<float> vector(TEST_SCHEMA_DIMENSIONS, 1.0F);
+    FFI_ArrowArray** arrays = nullptr;
+    FFI_ArrowSchema* schema = nullptr;
+    size_t count = 0;
+    char* error_message = nullptr;
+
+    REQUIRE(lancedb_table_nearest_to(
+        empty_table, vector.data(), vector.size(), 5, "data",
+        &arrays, &schema, &count, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count == 0);
+    REQUIRE(arrays == nullptr);
+    REQUIRE(schema == nullptr);
+
+    lancedb_table_free(empty_table);
+  }
+
+  lancedb_table_free(table);
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table - error reporting", "[table]") {
+  const std::string table_name = "table_error_reporting_test";
+  LanceDBTable* table = create_table_with_data(table_name, 10, 0);
+  REQUIRE(table != nullptr);
+
+  SECTION("Failures without an error message pointer are reported by the error code") {
+    // The failure is reported even when the caller is not interested in the message
+    REQUIRE(lancedb_table_delete(table, "this is not a predicate", nullptr) != LANCEDB_SUCCESS);
+  }
+
+  SECTION("Adding data with a mismatched schema should fail") {
+    auto schema = arrow::schema({arrow::field("other", arrow::int32())});
+    arrow::Int32Builder builder;
+    REQUIRE(builder.Append(1).ok());
+    std::shared_ptr<arrow::Array> array;
+    REQUIRE(builder.Finish(&array).ok());
+    auto batch = arrow::RecordBatch::Make(schema, 1, {array});
+
+    auto reader = create_reader_from_batch(batch);
+    REQUIRE(reader != nullptr);
+
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_add(table, reader, &error_message) != LANCEDB_SUCCESS);
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+  }
+
+  lancedb_table_free(table);
+}

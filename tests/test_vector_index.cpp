@@ -400,3 +400,67 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index List and Drop", "[vector_
   }
 }
 
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index - explicit tuning parameters", "[vector_index]") {
+  const std::string table_name = "vector_index_tuning_test";
+  LanceDBTable* table = create_table_with_data(table_name, 300, 0);
+  REQUIRE(table != nullptr);
+
+  const char* columns[] = {"data"};
+  LanceDBVectorIndexConfig config = {
+    .num_partitions = 2,
+    .num_sub_vectors = 2,
+    .max_iterations = 2,
+    .sample_rate = 64.0f,
+    .distance_type = LANCEDB_DISTANCE_COSINE,
+    .accelerator = nullptr,
+    .replace = 1
+  };
+
+  SECTION("IVF_FLAT index with all the tuning parameters") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 1, LANCEDB_INDEX_IVF_FLAT, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+  }
+
+  SECTION("IVF_PQ index with all the tuning parameters") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 1, LANCEDB_INDEX_IVF_PQ, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+  }
+
+  SECTION("IVF_HNSW_PQ index with all the tuning parameters") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 1, LANCEDB_INDEX_IVF_HNSW_PQ, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+  }
+
+  SECTION("IVF_HNSW_SQ index with all the tuning parameters") {
+    char* error_message = nullptr;
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 1, LANCEDB_INDEX_IVF_HNSW_SQ, &config, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+  }
+
+  SECTION("Vector index with invalid arguments should fail") {
+    REQUIRE(lancedb_table_create_vector_index(
+        nullptr, columns, 1, LANCEDB_INDEX_IVF_FLAT, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_vector_index(
+        table, nullptr, 1, LANCEDB_INDEX_IVF_FLAT, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 0, LANCEDB_INDEX_IVF_FLAT, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    const char* null_columns[] = {nullptr};
+    REQUIRE(lancedb_table_create_vector_index(
+        table, null_columns, 1, LANCEDB_INDEX_IVF_FLAT, &config, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    // A scalar index type is not a vector index type
+    REQUIRE(lancedb_table_create_vector_index(
+        table, columns, 1, LANCEDB_INDEX_BTREE, &config, nullptr) != LANCEDB_SUCCESS);
+  }
+
+  lancedb_table_free(table);
+}

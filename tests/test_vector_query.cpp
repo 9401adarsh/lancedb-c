@@ -1155,3 +1155,125 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Vector Query - repeated queries
 
   lancedb_table_free(table);
 }
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Query - column selection and invalid arguments", "[vector_query]") {
+  const std::string table_name = "vector_query_column_test";
+  LanceDBTable* table = create_table_with_data(table_name, 20, 0);
+  REQUIRE(table != nullptr);
+
+  const std::vector<float> vector(TEST_SCHEMA_DIMENSIONS, 1.0F);
+
+  SECTION("Query the vector column by name") {
+    LanceDBVectorQuery* query = lancedb_vector_query_new(
+        table, vector.data(), vector.size());
+    REQUIRE(query != nullptr);
+
+    char* error_message = nullptr;
+    REQUIRE(lancedb_vector_query_column(query, "data", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_vector_query_limit(query, 5, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    LanceDBQueryResult* query_result = lancedb_vector_query_execute(query);
+    REQUIRE(query_result != nullptr);
+
+    FFI_ArrowArray** result_arrays = nullptr;
+    FFI_ArrowSchema* result_schema = nullptr;
+    size_t count = 0;
+    REQUIRE(lancedb_query_result_to_arrow(
+        query_result, &result_arrays, &result_schema, &count, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count > 0);
+
+    lancedb_free_arrow_arrays(result_arrays, count);
+    lancedb_free_arrow_schema(result_schema);
+  }
+
+  SECTION("Query an unknown vector column should fail at execution") {
+    LanceDBVectorQuery* query = lancedb_vector_query_new(
+        table, vector.data(), vector.size());
+    REQUIRE(query != nullptr);
+
+    char* error_message = nullptr;
+    REQUIRE(lancedb_vector_query_column(query, "no_such_column", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    REQUIRE(lancedb_vector_query_execute(query) == nullptr);
+  }
+
+  SECTION("Vector query setters with null query should fail") {
+    const char* columns[] = {"key"};
+
+    REQUIRE(lancedb_vector_query_column(nullptr, "data", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_limit(nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_offset(nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_select(nullptr, columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_where_filter(nullptr, "key = 'key_0'", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_nprobes(nullptr, 10, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_refine_factor(nullptr, 2, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_ef(nullptr, 10, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_distance_type(nullptr, LANCEDB_DISTANCE_L2, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+  }
+
+  SECTION("Vector query with every distance type") {
+    const LanceDBDistanceType types[] = {
+      LANCEDB_DISTANCE_L2,
+      LANCEDB_DISTANCE_COSINE,
+      LANCEDB_DISTANCE_DOT,
+      LANCEDB_DISTANCE_HAMMING
+    };
+
+    for (const auto type : types) {
+      LanceDBVectorQuery* query = lancedb_vector_query_new(
+          table, vector.data(), vector.size());
+      REQUIRE(query != nullptr);
+
+      char* error_message = nullptr;
+      REQUIRE(lancedb_vector_query_distance_type(query, type, &error_message) == LANCEDB_SUCCESS);
+      REQUIRE(error_message == nullptr);
+
+      lancedb_vector_query_free(query);
+    }
+  }
+
+  SECTION("Vector query setters with strings that are not valid UTF-8 should fail") {
+    // A string that is not valid UTF-8, to exercise the string conversion failures
+    const char* const invalid_utf8 = "\xff\xfe";
+    const char* invalid_columns[] = {invalid_utf8};
+    const char* null_columns[] = {nullptr};
+
+    LanceDBVectorQuery* query = lancedb_vector_query_new(
+        table, vector.data(), vector.size());
+    REQUIRE(query != nullptr);
+
+    REQUIRE(lancedb_vector_query_column(query, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_select(query, null_columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_select(query, invalid_columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_where_filter(query, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    lancedb_vector_query_free(query);
+  }
+
+  SECTION("Creating a vector query with invalid arguments returns no query") {
+    REQUIRE(lancedb_vector_query_new(nullptr, vector.data(), vector.size()) == nullptr);
+    REQUIRE(lancedb_vector_query_new(table, nullptr, vector.size()) == nullptr);
+    REQUIRE(lancedb_vector_query_new(table, vector.data(), 0) == nullptr);
+    REQUIRE(lancedb_vector_query_execute(nullptr) == nullptr);
+  }
+
+  SECTION("Vector query setters with null arguments should fail") {
+    LanceDBVectorQuery* query = lancedb_vector_query_new(
+        table, vector.data(), vector.size());
+    REQUIRE(query != nullptr);
+
+    REQUIRE(lancedb_vector_query_column(query, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_select(query, nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_vector_query_where_filter(query, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+
+    lancedb_vector_query_free(query);
+  }
+
+  lancedb_table_free(table);
+}

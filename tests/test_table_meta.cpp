@@ -437,7 +437,6 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Metadata", "[table]") {
     }
     REQUIRE(metadata == expected);
 
-
     lancedb_free_metadata(keys, values, count);
   }
 
@@ -528,3 +527,71 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Metadata", "[table]") {
   lancedb_table_free(table);
 }
 
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Metadata - invalid arguments", "[table]") {
+  const std::string table_name = "metadata_invalid_args_test";
+  LanceDBTable* table = create_table_with_data(table_name, 5, 0);
+  REQUIRE(table != nullptr);
+
+  // A string that is not valid UTF-8, to exercise the string conversion failures
+  const char* const invalid_utf8 = "\xff\xfe";
+  const char* keys[] = {"key1"};
+  const char* values[] = {"value1"};
+  const char* null_keys[] = {nullptr};
+  const char* invalid_keys[] = {invalid_utf8};
+  const char* invalid_values[] = {invalid_utf8};
+
+  SECTION("Setting metadata with invalid arguments should fail") {
+    REQUIRE(lancedb_table_set_metadata(
+        table, null_keys, values, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_set_metadata(
+        table, invalid_keys, values, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_set_metadata(
+        table, keys, invalid_values, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Deleting metadata with invalid arguments should fail") {
+    REQUIRE(lancedb_table_delete_metadata(
+        table, null_keys, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_delete_metadata(
+        table, invalid_keys, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Getting metadata with invalid arguments should fail") {
+    char** keys_out = nullptr;
+    char** values_out = nullptr;
+    size_t count_out = 0;
+
+    REQUIRE(lancedb_table_get_metadata(
+        table, nullptr, 0, &keys_out, nullptr, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_get_metadata(
+        table, nullptr, 0, &keys_out, &values_out, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_get_metadata(
+        table, null_keys, 1, &keys_out, &values_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_table_get_metadata(
+        table, invalid_keys, 1, &keys_out, &values_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Getting metadata that was not set returns nothing") {
+    char** keys_out = nullptr;
+    char** values_out = nullptr;
+    size_t count_out = 0;
+    char* error_message = nullptr;
+    const char* missing_keys[] = {"no_such_key"};
+
+    REQUIRE(lancedb_table_get_metadata(
+        table, missing_keys, 1, &keys_out, &values_out, &count_out, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count_out == 0);
+  }
+
+  SECTION("Listing versions with invalid arguments should fail") {
+    LanceDBVersion* versions = nullptr;
+    LanceDBVersionMetadata* metadata = nullptr;
+    size_t count = 0;
+
+    REQUIRE(lancedb_table_list_versions(
+        table, &versions, &metadata, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  lancedb_table_free(table);
+}

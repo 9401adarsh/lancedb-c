@@ -366,3 +366,77 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Query - repeated queries popula
   
   lancedb_table_free(table);
 }
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Query - invalid arguments", "[query]") {
+  const std::string table_name = "query_invalid_args_test";
+  LanceDBTable* table = create_table_with_data(table_name, 10, 0);
+  REQUIRE(table != nullptr);
+
+  SECTION("Query setters with null query should fail") {
+    const char* columns[] = {"key"};
+
+    REQUIRE(lancedb_query_limit(nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_offset(nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_select(nullptr, columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_where_filter(nullptr, "key = 'key_0'", nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+  }
+
+  SECTION("Query setters with null arguments should fail") {
+    LanceDBQuery* query = lancedb_query_new(table);
+    REQUIRE(query != nullptr);
+
+    REQUIRE(lancedb_query_select(query, nullptr, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_where_filter(query, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+
+    lancedb_query_free(query);
+  }
+
+  SECTION("Query setters with strings that are not valid UTF-8 should fail") {
+    // A string that is not valid UTF-8, to exercise the string conversion failures
+    const char* const invalid_utf8 = "\xff\xfe";
+    const char* invalid_columns[] = {invalid_utf8};
+    const char* null_columns[] = {nullptr};
+
+    LanceDBQuery* query = lancedb_query_new(table);
+    REQUIRE(query != nullptr);
+
+    REQUIRE(lancedb_query_select(query, null_columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_select(query, invalid_columns, 1, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_where_filter(query, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    lancedb_query_free(query);
+  }
+
+  SECTION("Query on a null table returns no query") {
+    REQUIRE(lancedb_query_new(nullptr) == nullptr);
+    REQUIRE(lancedb_query_execute(nullptr) == nullptr);
+  }
+
+  SECTION("Converting results with invalid arguments should fail") {
+    LanceDBQuery* query = lancedb_query_new(table);
+    REQUIRE(query != nullptr);
+    LanceDBQueryResult* query_result = lancedb_query_execute(query);
+    REQUIRE(query_result != nullptr);
+
+    FFI_ArrowArray** result_arrays = nullptr;
+    FFI_ArrowSchema* result_schema = nullptr;
+    size_t count = 0;
+
+    REQUIRE(lancedb_query_result_to_arrow(
+        nullptr, &result_arrays, &result_schema, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_result_to_arrow(
+        query_result, nullptr, &result_schema, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_result_to_arrow(
+        query_result, &result_arrays, nullptr, &count, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_query_result_to_arrow(
+        query_result, &result_arrays, &result_schema, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+
+    // The result was not consumed by the rejected conversions
+    lancedb_query_result_free(query_result);
+  }
+
+  lancedb_table_free(table);
+}

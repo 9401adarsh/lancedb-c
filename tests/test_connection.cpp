@@ -574,3 +574,203 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Namespaces", "[connection]") {
     REQUIRE(result == LANCEDB_SUCCESS);
   }
 }
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Namespaces - listing and invalid arguments", "[connection]") {
+  char* error_message = nullptr;
+
+  SECTION("List the namespaces of the root namespace") {
+    REQUIRE(lancedb_connection_create_namespace(db, "space_a", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(lancedb_connection_create_namespace(db, "space_b", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+
+    // A NULL parent lists the namespaces of the root namespace
+    char** names_out = nullptr;
+    size_t count_out = 0;
+    REQUIRE(lancedb_connection_list_namespaces(
+        db, nullptr, &names_out, &count_out, &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    REQUIRE(count_out == 2);
+    REQUIRE(names_out != nullptr);
+
+    std::set<std::string> names;
+    for (size_t i = 0; i < count_out; i++) {
+      REQUIRE(names_out[i] != nullptr);
+      names.insert(names_out[i]);
+    }
+    REQUIRE(names.count("space_a") == 1);
+    REQUIRE(names.count("space_b") == 1);
+
+    lancedb_free_namespace_list(names_out, count_out);
+
+    REQUIRE(lancedb_connection_drop_namespace(db, "space_a", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(lancedb_connection_drop_namespace(db, "space_b", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+  }
+
+  SECTION("Namespace operations with invalid arguments should fail") {
+    char** names_out = nullptr;
+    size_t count_out = 0;
+
+    REQUIRE(lancedb_connection_create_namespace(
+        nullptr, "space", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_create_namespace(
+        db, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_namespace(
+        nullptr, "space", nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_namespace(
+        db, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_list_namespaces(
+        nullptr, nullptr, &names_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_list_namespaces(
+        db, nullptr, nullptr, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_list_namespaces(
+        db, nullptr, &names_out, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Freeing a namespace list with no namespaces is safe") {
+    lancedb_free_namespace_list(nullptr, 0);
+  }
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Connection - table operations with invalid arguments", "[connection]") {
+  char* error_message = nullptr;
+  const char* _namespace = nullptr;
+
+  SECTION("Dropping a table that does not exist should fail") {
+    LanceDBError result = lancedb_connection_drop_table(
+        db, "no_such_table", _namespace, &error_message);
+    REQUIRE(result != LANCEDB_SUCCESS);
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+  }
+
+  SECTION("Renaming a table that does not exist should fail") {
+    LanceDBError result = lancedb_connection_rename_table(
+        db, "no_such_table", "new_name", _namespace, _namespace, &error_message);
+    REQUIRE(result != LANCEDB_SUCCESS);
+    if (error_message) {
+      lancedb_free_string(error_message);
+    }
+  }
+
+  SECTION("Table operations with null arguments should fail") {
+    REQUIRE(lancedb_connection_drop_table(
+        nullptr, "table", _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_table(
+        db, nullptr, _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_rename_table(
+        nullptr, "old", "new", _namespace, _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_rename_table(
+        db, nullptr, "new", _namespace, _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_rename_table(
+        db, "old", nullptr, _namespace, _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_all_tables(
+        nullptr, _namespace, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Freeing a provider that was never created is safe") {
+    lancedb_object_store_provider_free(nullptr);
+  }
+}
+
+TEST_CASE_METHOD(LanceDBFixture, "LanceDB Connection - invalid strings and null outputs", "[connection]") {
+  // A string that is not valid UTF-8, to exercise the string conversion failures
+  const char* const invalid_utf8 = "\xff\xfe";
+
+  SECTION("Connecting with an invalid URI returns no builder") {
+    REQUIRE(lancedb_connect(nullptr) == nullptr);
+    REQUIRE(lancedb_connect(invalid_utf8) == nullptr);
+  }
+
+  SECTION("Executing a null builder should fail") {
+    LanceDBConnection* connection = nullptr;
+    REQUIRE(lancedb_connect_builder_execute(nullptr, &connection, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(connection == nullptr);
+  }
+
+  SECTION("Builder options with invalid arguments return no builder") {
+    REQUIRE(lancedb_connect_builder_storage_option(nullptr, "key", "value") == nullptr);
+    REQUIRE(lancedb_connect_builder_session(nullptr, nullptr) == nullptr);
+
+    LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
+    REQUIRE(builder != nullptr);
+    REQUIRE(lancedb_connect_builder_storage_option(builder, nullptr, "value") == nullptr);
+
+    builder = lancedb_connect(uri.c_str());
+    REQUIRE(builder != nullptr);
+    REQUIRE(lancedb_connect_builder_storage_option(builder, invalid_utf8, "value") == nullptr);
+  }
+
+  SECTION("Opening a table with an invalid name returns no table") {
+    REQUIRE(lancedb_connection_open_table(nullptr, "table") == nullptr);
+    REQUIRE(lancedb_connection_open_table(db, nullptr) == nullptr);
+    REQUIRE(lancedb_connection_open_table(db, invalid_utf8) == nullptr);
+  }
+
+  SECTION("Creating a table with an invalid name should fail") {
+    auto schema = create_test_schema();
+    struct ArrowSchema c_schema;
+    REQUIRE(arrow::ExportSchema(*schema, &c_schema).ok());
+
+    LanceDBTable* table = nullptr;
+    REQUIRE(lancedb_table_create(
+        db, invalid_utf8, reinterpret_cast<FFI_ArrowSchema*>(&c_schema),
+        nullptr, &table, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(table == nullptr);
+
+    if (c_schema.release) {
+      c_schema.release(&c_schema);
+    }
+  }
+
+  SECTION("Listing table names with invalid arguments should fail") {
+    char** names_out = nullptr;
+    size_t count_out = 0;
+
+    REQUIRE(lancedb_connection_table_names(
+        nullptr, &names_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_table_names(
+        db, nullptr, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_table_names(
+        db, &names_out, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    // Freeing an empty name list is safe
+    lancedb_free_table_names(nullptr, 0);
+  }
+
+  SECTION("Table name builder with invalid arguments should fail") {
+    char** names_out = nullptr;
+    size_t count_out = 0;
+
+    LanceDBTableNamesBuilder* builder = lancedb_connection_table_names_builder(db);
+    REQUIRE(builder != nullptr);
+    REQUIRE(lancedb_table_names_builder_execute(
+        builder, nullptr, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    builder = lancedb_connection_table_names_builder(db);
+    REQUIRE(builder != nullptr);
+    REQUIRE(lancedb_table_names_builder_execute(
+        builder, &names_out, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    REQUIRE(lancedb_table_names_builder_execute(
+        nullptr, &names_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+
+  SECTION("Operations with names that are not valid UTF-8 should fail") {
+    REQUIRE(lancedb_connection_drop_table(db, invalid_utf8, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_rename_table(
+        db, invalid_utf8, "new_name", nullptr, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_rename_table(
+        db, "old_name", invalid_utf8, nullptr, nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_all_tables(db, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_create_namespace(db, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_drop_namespace(db, invalid_utf8, nullptr) == LANCEDB_INVALID_ARGUMENT);
+
+    char** names_out = nullptr;
+    size_t count_out = 0;
+    REQUIRE(lancedb_connection_list_namespaces(
+        db, invalid_utf8, &names_out, &count_out, nullptr) == LANCEDB_INVALID_ARGUMENT);
+  }
+}
