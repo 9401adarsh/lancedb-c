@@ -33,13 +33,82 @@ pub enum LanceDBError {
     NotSupported = 19,
     Other = 20,
     Namespace = 21,
-    Unknown = 22,
+    PermissionDenied = 22,
+    NotFound = 23,
+    // keep last, so that new error codes can be added without renumbering
+    Unknown = 99,
 }
+
+/// The message a namespace backend produces when a table is missing, as rendered by
+/// `lance_namespace::NamespaceError::TableNotFound`
+const NAMESPACE_TABLE_NOT_FOUND: &str = "Table not found:";
+
+/// The message a namespace backend produces when a namespace is missing, as rendered by
+/// `lance_namespace::NamespaceError::NamespaceNotFound`
+const NAMESPACE_NOT_FOUND: &str = "Namespace not found:";
+
+/// Map an error message of a namespace backend to a "not found" error code
+///
+/// The namespace errors lose their original variant on the way out of lancedb, so the
+/// message is the only thing left to tell a missing table or namespace apart from any
+/// other namespace failure. Returns None when the message describes anything else.
+fn not_found_from_message(message: &str) -> Option<LanceDBError> {
+    if message.contains(NAMESPACE_TABLE_NOT_FOUND) {
+        Some(LanceDBError::TableNotFound)
+    } else if message.contains(NAMESPACE_NOT_FOUND) {
+        Some(LanceDBError::DatabaseNotFound)
+    } else {
+        None
+    }
+}
+
+/// Markers of a storage failure caused by missing privileges
+///
+/// Both the display and the debug format of the errors are covered, since lancedb
+/// reports some of them with one format and some with the other. An S3 store does not
+/// use the typed variants of the object store: it reports a generic error that carries
+/// the HTTP status and the error code of the S3 response, so the S3 error code is
+/// matched instead. Only markers that were seen coming out of a real backend are listed
+const PERMISSION_DENIED_MARKERS: [&str; 3] = [
+    "PermissionDenied",  // OS error kind, on a file backend (debug)
+    "Permission denied", // OS error, on a file backend (display)
+    "AccessDenied",      // S3 error code of a 403 response
+];
+
+/// Markers of a storage failure caused by a missing object
+const NOT_FOUND_MARKERS: [&str; 1] = [
+    "NoSuchBucket", // S3 error code of a 404 response
+];
+
+/// Map an error message of the storage layer to a "permission denied" or "not found"
+/// error code
+fn storage_failure_from_message(message: &str) -> Option<LanceDBError> {
+    if PERMISSION_DENIED_MARKERS
+        .iter()
+        .any(|m| message.contains(m))
+    {
+        Some(LanceDBError::PermissionDenied)
+    } else if NOT_FOUND_MARKERS.iter().any(|m| message.contains(m)) {
+        Some(LanceDBError::NotFound)
+    } else {
+        None
+    }
+}
+
+/// The message lancedb produces when the internal namespace client cannot be connected
+const NAMESPACE_CONNECT_FAILED: &str = "Failed to connect to namespace:";
 
 /// Convert Rust Error to C error code
 pub(crate) fn error_to_error_code(error: &lancedb::error::Error) -> LanceDBError {
     match error {
         lancedb::error::Error::InvalidTableName { .. } => LanceDBError::InvalidTableName,
+        // a failure to connect to the internal namespace client is not an invalid input,
+        // it is a storage failure that lost its original error on the way out of lancedb
+        lancedb::error::Error::InvalidInput { message }
+            if message.contains(NAMESPACE_CONNECT_FAILED) =>
+        {
+            storage_failure_from_message(message).unwrap_or(LanceDBError::Lance)
+        }
         lancedb::error::Error::InvalidInput { .. } => LanceDBError::InvalidInput,
         lancedb::error::Error::TableNotFound { .. } => LanceDBError::TableNotFound,
         lancedb::error::Error::DatabaseNotFound { .. } => LanceDBError::DatabaseNotFound,
@@ -51,13 +120,30 @@ pub(crate) fn error_to_error_code(error: &lancedb::error::Error) -> LanceDBError
         lancedb::error::Error::TableAlreadyExists { .. } => LanceDBError::TableAlreadyExists,
         lancedb::error::Error::CreateDir { .. } => LanceDBError::CreateDir,
         lancedb::error::Error::Schema { .. } => LanceDBError::Schema,
-        lancedb::error::Error::Runtime { .. } => LanceDBError::Runtime,
+        // the namespace backend wraps all of its failures into a generic runtime error
+        // (lancedb: database/namespace.rs), so a missing table or namespace is recovered
+        // from the message
+        lancedb::error::Error::Runtime { message } => {
+            not_found_from_message(message).unwrap_or(LanceDBError::Runtime)
+        }
         lancedb::error::Error::Timeout { .. } => LanceDBError::Timeout,
-        lancedb::error::Error::ObjectStore { .. } => LanceDBError::ObjectStore,
-        lancedb::error::Error::Lance { source } => match source {
-            lance::Error::Namespace { .. } => LanceDBError::Namespace,
-            _ => LanceDBError::Lance,
-        },
+        lancedb::error::Error::ObjectStore { source } => {
+            storage_failure_from_message(&source.to_string()).unwrap_or(LanceDBError::ObjectStore)
+        }
+        // the namespace errors and the object store errors are wrapped by lance without
+        // their original variant, so the actionable ones are recovered from the message
+        lancedb::error::Error::Lance { source } => {
+            let message = source.to_string();
+            let fallback = match source {
+                lance::Error::NotFound { .. } => LanceDBError::NotFound,
+                lance::Error::IndexNotFound { .. } => LanceDBError::IndexNotFound,
+                lance::Error::Namespace { .. } => LanceDBError::Namespace,
+                _ => LanceDBError::Lance,
+            };
+            not_found_from_message(&message)
+                .or_else(|| storage_failure_from_message(&message))
+                .unwrap_or(fallback)
+        }
         lancedb::error::Error::Http { .. } => LanceDBError::Http,
         lancedb::error::Error::Retry { .. } => LanceDBError::Retry,
         lancedb::error::Error::Arrow { .. } => LanceDBError::Arrow,

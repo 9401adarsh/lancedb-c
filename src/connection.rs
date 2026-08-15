@@ -911,38 +911,44 @@ pub unsafe extern "C" fn lancedb_free_namespace_list(namespaces: *mut *mut c_cha
 /// # Safety
 /// - `connection` must be a valid pointer
 /// - `table_name` must be a valid null-terminated C string
+/// - `table_out` must be a valid pointer to receive the opened table
+/// - `error_message` can be NULL to ignore detailed error messages
 ///
 /// # Returns
-/// - Non-null pointer to LanceDBTable on success
-/// - Null pointer on failure
+/// - Error code indicating success or failure
 #[no_mangle]
 pub unsafe extern "C" fn lancedb_connection_open_table(
     connection: *const LanceDBConnection,
     table_name: *const c_char,
-) -> *mut LanceDBTable {
-    if connection.is_null() || table_name.is_null() {
-        return ptr::null_mut();
+    table_out: *mut *mut LanceDBTable,
+    error_message: *mut *mut c_char,
+) -> LanceDBError {
+    if connection.is_null() || table_name.is_null() || table_out.is_null() {
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
     }
 
     let Ok(table_name_str) = CStr::from_ptr(table_name).to_str() else {
-        return ptr::null_mut();
+        set_invalid_argument_message(error_message);
+        return LanceDBError::InvalidArgument;
     };
-
-    // lancedb panics on an invalid table name instead of returning an error,
-    // so the name is validated before the table is opened
-    if validate_table_name(table_name_str).is_err() {
-        return ptr::null_mut();
-    }
 
     let conn = &(*connection).inner;
     let runtime = get_runtime();
 
-    match runtime.block_on(conn.open_table(table_name_str).execute()) {
+    match runtime.block_on(async {
+        // lancedb panics on an invalid table name instead of returning an error,
+        // so the name is validated before the table is opened
+        validate_table_name(table_name_str)?;
+
+        conn.open_table(table_name_str).execute().await
+    }) {
         Ok(table) => {
             let boxed_table = Box::new(LanceDBTable { inner: table });
-            Box::into_raw(boxed_table)
+            *table_out = Box::into_raw(boxed_table);
+            LanceDBError::Success
         }
-        Err(_) => ptr::null_mut(),
+        Err(e) => handle_error(&e, error_message),
     }
 }
 

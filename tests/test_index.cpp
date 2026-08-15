@@ -63,8 +63,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index", "[index]") {
   SECTION("Create BTREE index on empty table then add data") {
     // Create empty table
     create_empty_table(table_name);
-    LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-    REQUIRE(table != nullptr);
+    LanceDBTable* table = open_table(table_name);
 
     // Create BTREE index on the "key" column
     const char* columns[] = {"key"};
@@ -370,13 +369,13 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Scalar Index List and Drop", "[index]"
     char* error_message = nullptr;
     LanceDBError result = lancedb_table_drop_index(table, "non_existent_index", &error_message);
 
-    // Should fail
-    REQUIRE(result != LANCEDB_SUCCESS);
+    // lance reports a missing index without its original error variant,
+    // so it is recovered from the message
+    REQUIRE(result == LANCEDB_INDEX_NOT_FOUND);
+    REQUIRE(error_message != nullptr);
 
-    if (error_message) {
-      INFO("Error message: " << error_message);
-      lancedb_free_string(error_message);
-    }
+    INFO("Error message: " << error_message);
+    lancedb_free_string(error_message);
 
     lancedb_table_free(table);
   }

@@ -143,8 +143,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Creation", "[table]") {
     lancedb_table_free(table);
 
     // Reopen the table
-    LanceDBTable* reopened_table = lancedb_connection_open_table(db, table_name.c_str());
-    REQUIRE(reopened_table != nullptr);
+    LanceDBTable* reopened_table = open_table(table_name);
     REQUIRE(lancedb_table_count_rows(reopened_table) == row_num);
     lancedb_table_free(reopened_table);
   }
@@ -180,7 +179,12 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Creation", "[table]") {
     }
 
     // Opening a table with an invalid name fails as well
-    REQUIRE(lancedb_connection_open_table(db, "invalid table name") == nullptr);
+    LanceDBTable* invalid_table = nullptr;
+    REQUIRE(lancedb_connection_open_table(db, "invalid table name", &invalid_table, &error_message)
+        == LANCEDB_INVALID_TABLE_NAME);
+    REQUIRE(invalid_table == nullptr);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
 
     // Clean up schema
     if (c_schema.release) {
@@ -237,8 +241,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Add", "[table]") {
   create_empty_table(table_name);
 
   // Open the table
-  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-  REQUIRE(table != nullptr);
+  LanceDBTable* table = open_table(table_name);
 
   SECTION("Add data to empty table") {
     // Verify table is initially empty
@@ -383,8 +386,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Merge Insert", "[table]") {
   create_empty_table(table_name);
 
   // Open the table
-  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-  REQUIRE(table != nullptr);
+  LanceDBTable* table = open_table(table_name);
 
   // Add initial data
   constexpr auto row_num = 10;
@@ -1049,8 +1051,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table Delete", "[table]") {
   const std::string table_name = "test_delete_table";
   create_empty_table(table_name);
 
-  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-  REQUIRE(table != nullptr);
+  LanceDBTable* table = open_table(table_name);
 
   // Add initial data (keys key_0 through key_9)
   constexpr auto row_num = 20;
@@ -1159,8 +1160,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table DF Delete", "[table]") {
   const std::string table_name = "test_df_delete_table";
   create_empty_table(table_name);
 
-  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-  REQUIRE(table != nullptr);
+  LanceDBTable* table = open_table(table_name);
 
   constexpr auto row_num = 20;
   auto initial_batch = create_test_record_batch(row_num, 0);
@@ -1278,8 +1278,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB run_on_stack wrapping", "[table]") {
   const std::string table_name = "test_run_on_stack";
   create_empty_table(table_name);
 
-  LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-  REQUIRE(table != nullptr);
+  LanceDBTable* table = open_table(table_name);
 
   constexpr auto row_num = 10;
   auto initial_batch = create_test_record_batch(row_num, 0);
@@ -1455,16 +1454,16 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Table CRUD with same session ac
   // Reopen and read again
   lancedb_table_free(table_a);
   lancedb_table_free(table_b);
-  table_a = lancedb_connection_open_table(db, table_a_name.c_str());
-  table_b = lancedb_connection_open_table(db, table_b_name.c_str());
-  REQUIRE(table_a != nullptr);
-  REQUIRE(table_b != nullptr);
+  table_a = open_table(table_a_name);
+  table_b = open_table(table_b_name);
   REQUIRE(lancedb_table_count_rows(table_a) == table_a_rows);
   REQUIRE(lancedb_table_count_rows(table_b) == table_b_rows);
 
   // Delete
   lancedb_table_free(table_a);
   lancedb_table_free(table_b);
+  table_a = nullptr;
+  table_b = nullptr;
   char* error_message = nullptr;
   LanceDBError result = lancedb_connection_drop_table(db, table_a_name.c_str(), _namespace, &error_message);
   REQUIRE(result == LANCEDB_SUCCESS);
@@ -1475,9 +1474,17 @@ TEST_CASE_METHOD(LanceDBSessionFixture, "LanceDB Table CRUD with same session ac
   REQUIRE(error_message == nullptr);
 
   // Verify delete
-  table_a = lancedb_connection_open_table(db, table_a_name.c_str());
-  table_b = lancedb_connection_open_table(db, table_b_name.c_str());
+  REQUIRE(lancedb_connection_open_table(db, table_a_name.c_str(), &table_a, &error_message)
+      == LANCEDB_TABLE_NOT_FOUND);
+  REQUIRE(error_message != nullptr);
+  lancedb_free_string(error_message);
+  error_message = nullptr;
   REQUIRE(table_a == nullptr);
+
+  REQUIRE(lancedb_connection_open_table(db, table_b_name.c_str(), &table_b, &error_message)
+      == LANCEDB_TABLE_NOT_FOUND);
+  REQUIRE(error_message != nullptr);
+  lancedb_free_string(error_message);
   REQUIRE(table_b == nullptr);
 }
 
@@ -1559,8 +1566,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table - invalid arguments", "[table]")
   SECTION("Vector search on an empty table returns no results") {
     const std::string empty_name = "empty_nearest_to_test";
     create_empty_table(empty_name);
-    LanceDBTable* empty_table = lancedb_connection_open_table(db, empty_name.c_str());
-    REQUIRE(empty_table != nullptr);
+    LanceDBTable* empty_table = open_table(empty_name);
 
     const std::vector<float> vector(TEST_SCHEMA_DIMENSIONS, 1.0F);
     FFI_ArrowArray** arrays = nullptr;
