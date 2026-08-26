@@ -87,6 +87,28 @@ LanceDBTable* LanceDBFixture::create_table_with_data(const std::string& table_na
   return table;
 }
 
+LanceDBTable* LanceDBFixture::open_table(const std::string& table_name) {
+  LanceDBTable* table = nullptr;
+  char* error_message = nullptr;
+
+  REQUIRE(lancedb_connection_open_table(db, table_name.c_str(), &table, &error_message) == LANCEDB_SUCCESS);
+  REQUIRE(error_message == nullptr);
+  REQUIRE(table != nullptr);
+
+  return table;
+}
+
+void LanceDBFixture::require_table_not_found(const std::string& table_name) {
+  LanceDBTable* table = nullptr;
+  char* error_message = nullptr;
+
+  REQUIRE(lancedb_connection_open_table(db, table_name.c_str(), &table, &error_message) == LANCEDB_TABLE_NOT_FOUND);
+  REQUIRE(error_message != nullptr);
+  REQUIRE(table == nullptr);
+
+  lancedb_free_string(error_message);
+}
+
 std::shared_ptr<arrow::Schema> create_test_schema() {
   auto key_field = arrow::field("key", arrow::utf8());
   auto data_field = arrow::field("data", arrow::fixed_size_list(arrow::float32(), TEST_SCHEMA_DIMENSIONS));

@@ -6,8 +6,33 @@
 #include "test_common.h"
 #include <set>
 #include <fstream>
+#include <filesystem>
 
 static const char* NON_UTF8 = "\x80\xFF\xFE\xAB";
+
+// the messages are indexed by the error code, so a missing message would go unnoticed
+static_assert(sizeof(LANCEDB_ERROR_MESSAGES)/sizeof(LANCEDB_ERROR_MESSAGES[0]) == LANCEDB_NOT_FOUND + 1,
+    "every error code below LANCEDB_UNKNOWN must have a message");
+
+TEST_CASE("LanceDB Error Messages", "[connection]") {
+  SECTION("Error codes are mapped to their own message") {
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_SUCCESS)) == "Success");
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_TABLE_NOT_FOUND)) == "Table not found");
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_NAMESPACE)) == "Namespace error");
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_PERMISSION_DENIED)) == "Permission denied");
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_NOT_FOUND)) == "Not found");
+  }
+  SECTION("The unknown error is kept out of the range of the other codes") {
+    REQUIRE(LANCEDB_UNKNOWN > LANCEDB_NOT_FOUND);
+    REQUIRE(std::string(lancedb_error_to_message(LANCEDB_UNKNOWN)) == "Unknown error");
+  }
+  SECTION("Codes with no message are reported as invalid") {
+    for (const auto invalid : {LANCEDB_NOT_FOUND + 1, LANCEDB_UNKNOWN - 1, LANCEDB_UNKNOWN + 1}) {
+      REQUIRE(std::string(lancedb_error_to_message(static_cast<LanceDBError>(invalid)))
+          == "Invalid error code");
+    }
+  }
+}
 
 TEST_CASE_METHOD(LanceDBFixture, "LanceDB Connection", "[connection]") {
   SECTION("Connect to a database and get the URI") {
@@ -150,8 +175,43 @@ TEST_CASE_METHOD(BaseFixture, "LanceDB Session", "[connection]") {
     LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
     LanceDBConnection* db = nullptr;
     char* error_message = nullptr;
-    REQUIRE(lancedb_connect_builder_execute(builder, &db, &error_message) != LANCEDB_SUCCESS);
+    // the directory cannot be created, so the connection fails before the
+    // listing database connects to its internal namespace
+    REQUIRE(lancedb_connect_builder_execute(builder, &db, &error_message) == LANCEDB_CREATE_DIR);
     REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+  SECTION("Connect failure of the internal namespace") {
+    // the directory already exists, so it is not created again, and the connection
+    // gets as far as the "dir" namespace client that the listing database always
+    // builds for itself. that client fails to list the directory.
+    std::filesystem::create_directories(uri);
+    std::filesystem::permissions(uri, std::filesystem::perms::none);
+
+    std::error_code ec;
+    const std::filesystem::directory_iterator locked_dir(uri, ec);
+    if (!ec) {
+      // the directory is still readable (e.g. when running as root),
+      // so the failure cannot be triggered
+      std::filesystem::permissions(uri, std::filesystem::perms::owner_all);
+      SUCCEED("directory permissions are not enforced");
+      return;
+    }
+
+    LanceDBConnectBuilder* builder = lancedb_connect(uri.c_str());
+    LanceDBConnection* db = nullptr;
+    char* error_message = nullptr;
+    const LanceDBError result = lancedb_connect_builder_execute(builder, &db, &error_message);
+
+    // restore the permissions before asserting, so that the fixture can clean up
+    std::filesystem::permissions(uri, std::filesystem::perms::owner_all);
+
+    // lancedb flattens any failure of the namespace client into an invalid input
+    // error, so the reason is recovered from the message
+    REQUIRE(result == LANCEDB_PERMISSION_DENIED);
+    REQUIRE(db == nullptr);
+    REQUIRE(error_message != nullptr);
+    REQUIRE(std::string(error_message).find("Failed to connect to namespace") != std::string::npos);
     lancedb_free_string(error_message);
   }
   SECTION("Create and free registry") {
@@ -265,9 +325,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Tables", "[connection]") {
   }
   SECTION("Open Tables") {
     for (size_t i = 0; i < count_out; ++i) {
-      auto tbl = lancedb_connection_open_table(db, names_out[i]);
-      REQUIRE(tbl != nullptr);
-      lancedb_table_free(tbl);
+      lancedb_table_free(open_table(names_out[i]));
     }
   }
   SECTION("Drop Tables") {
@@ -276,8 +334,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Tables", "[connection]") {
       auto result = lancedb_connection_drop_table(db, names_out[i], _namespace, &error_message);
       REQUIRE(error_message == nullptr);
       REQUIRE(result == LANCEDB_SUCCESS);
-      auto tbl = lancedb_connection_open_table(db, names_out[i]);
-      REQUIRE(tbl == nullptr);
+      require_table_not_found(names_out[i]);
     }
   }
   SECTION("Rename Tables (not supported for OSS") {
@@ -293,11 +350,8 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Tables", "[connection]") {
       REQUIRE(error_message != nullptr);
       lancedb_free_string(error_message);
       REQUIRE(result == LANCEDB_NOT_SUPPORTED);
-      auto tbl = lancedb_connection_open_table(db, new_name.c_str());
-      REQUIRE(tbl == nullptr);
-      tbl = lancedb_connection_open_table(db, names_out[i]);
-      REQUIRE(tbl != nullptr);
-      lancedb_table_free(tbl);
+      require_table_not_found(new_name);
+      lancedb_table_free(open_table(names_out[i]));
     }
   }
   SECTION("Drop All Tables") {
@@ -306,8 +360,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Tables", "[connection]") {
     REQUIRE(error_message == nullptr);
     REQUIRE(result == LANCEDB_SUCCESS);
     for (size_t i = 0; i < count_out; ++i) {
-      auto tbl = lancedb_connection_open_table(db, names_out[i]);
-      REQUIRE(tbl == nullptr);
+      require_table_not_found(names_out[i]);
     }
   }
   lancedb_free_table_names(names_out, count_out);
@@ -640,10 +693,132 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Connection - table operations with inv
   SECTION("Dropping a table that does not exist should fail") {
     LanceDBError result = lancedb_connection_drop_table(
         db, "no_such_table", _namespace, &error_message);
-    REQUIRE(result != LANCEDB_SUCCESS);
-    if (error_message) {
+    REQUIRE(result == LANCEDB_TABLE_NOT_FOUND);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Dropping a table that does not exist inside a namespace should fail") {
+    REQUIRE(lancedb_connection_create_namespace(db, "myspace", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    // the namespace backend reports a missing table as a generic runtime error,
+    // so this verifies that it is still reported as a missing table
+    LanceDBError result = lancedb_connection_drop_table(
+        db, "no_such_table", "myspace", &error_message);
+    REQUIRE(result == LANCEDB_TABLE_NOT_FOUND);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Dropping a namespace that does not exist should fail") {
+    // the namespace backend reports a missing namespace without its original error
+    // variant, so this verifies that it is still reported as a missing database
+    LanceDBError result = lancedb_connection_drop_namespace(db, "no_such_namespace", &error_message);
+    REQUIRE(result == LANCEDB_DATABASE_NOT_FOUND);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Dropping a nested namespace that does not exist should fail") {
+    REQUIRE(lancedb_connection_create_namespace(db, "parent", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    LanceDBError result = lancedb_connection_drop_namespace(db, "parent/no_such_child", &error_message);
+    REQUIRE(result == LANCEDB_DATABASE_NOT_FOUND);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Creating a namespace that already exists should fail") {
+    // a namespace failure that is not a missing namespace keeps its own error code
+    REQUIRE(lancedb_connection_create_namespace(db, "myspace", &error_message) == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    LanceDBError result = lancedb_connection_create_namespace(db, "myspace", &error_message);
+    REQUIRE(result == LANCEDB_NAMESPACE);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Opening a table that does not exist should fail") {
+    require_table_not_found("no_such_table");
+  }
+
+  SECTION("Opening a table that was dropped should fail") {
+    const std::string table_name = "dropped_table";
+    create_empty_table(table_name);
+    lancedb_table_free(open_table(table_name));
+    REQUIRE(lancedb_connection_drop_table(db, table_name.c_str(), _namespace, &error_message)
+        == LANCEDB_SUCCESS);
+    REQUIRE(error_message == nullptr);
+    require_table_not_found(table_name);
+  }
+
+  SECTION("Opening a table with an invalid name should fail") {
+    // the name is validated before the table is opened, since lancedb panics
+    // on an invalid table name instead of returning an error
+    for (const auto* invalid_name : {"", "invalid table name", "../escape"}) {
+      LanceDBTable* table = nullptr;
+      REQUIRE(lancedb_connection_open_table(db, invalid_name, &table, &error_message)
+          == LANCEDB_INVALID_TABLE_NAME);
+      REQUIRE(table == nullptr);
+      REQUIRE(error_message != nullptr);
       lancedb_free_string(error_message);
+      error_message = nullptr;
     }
+  }
+
+  SECTION("Opening a table that cannot be loaded should fail") {
+    const std::string table_name = "corrupted_table";
+    create_empty_table(table_name);
+
+    // overwrite the manifests, so that the table exists but cannot be loaded
+    const auto versions_dir = std::filesystem::path(uri) / (table_name + ".lance") / "_versions";
+    size_t manifests = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(versions_dir)) {
+      if (entry.path().extension() == ".manifest") {
+        std::ofstream manifest(entry.path(), std::ios::binary | std::ios::trunc);
+        manifest << "not a manifest";
+        ++manifests;
+      }
+    }
+    REQUIRE(manifests > 0);
+
+    LanceDBTable* table = nullptr;
+    REQUIRE(lancedb_connection_open_table(db, table_name.c_str(), &table, &error_message)
+        == LANCEDB_LANCE);
+    REQUIRE(table == nullptr);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
+  }
+
+  SECTION("Opening a table that cannot be read should fail") {
+    const std::string table_name = "unreadable_table";
+    create_empty_table(table_name);
+    const auto table_dir = std::filesystem::path(uri) / (table_name + ".lance");
+    std::filesystem::permissions(table_dir, std::filesystem::perms::none);
+
+    std::error_code ec;
+    const std::filesystem::directory_iterator locked_dir(table_dir, ec);
+    if (!ec) {
+      // the directory is still readable (e.g. when running as root),
+      // so the failure cannot be triggered
+      std::filesystem::permissions(table_dir, std::filesystem::perms::owner_all);
+      SUCCEED("directory permissions are not enforced");
+      return;
+    }
+
+    LanceDBTable* table = nullptr;
+    const LanceDBError result =
+        lancedb_connection_open_table(db, table_name.c_str(), &table, &error_message);
+
+    // restore the permissions before asserting, so that the fixture can clean up
+    std::filesystem::permissions(table_dir, std::filesystem::perms::owner_all);
+
+    // the object store error is wrapped by lance without its original variant,
+    // so the reason is recovered from the message
+    REQUIRE(result == LANCEDB_PERMISSION_DENIED);
+    REQUIRE(table == nullptr);
+    REQUIRE(error_message != nullptr);
+    lancedb_free_string(error_message);
   }
 
   SECTION("Renaming a table that does not exist should fail") {
@@ -703,10 +878,13 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Connection - invalid strings and null 
     REQUIRE(lancedb_connect_builder_storage_option(builder, invalid_utf8, "value") == nullptr);
   }
 
-  SECTION("Opening a table with an invalid name returns no table") {
-    REQUIRE(lancedb_connection_open_table(nullptr, "table") == nullptr);
-    REQUIRE(lancedb_connection_open_table(db, nullptr) == nullptr);
-    REQUIRE(lancedb_connection_open_table(db, invalid_utf8) == nullptr);
+  SECTION("Opening a table with an invalid argument returns no table") {
+    LanceDBTable* table = nullptr;
+    REQUIRE(lancedb_connection_open_table(nullptr, "table", &table, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_open_table(db, nullptr, &table, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_open_table(db, "table", nullptr, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(lancedb_connection_open_table(db, invalid_utf8, &table, nullptr) == LANCEDB_INVALID_ARGUMENT);
+    REQUIRE(table == nullptr);
   }
 
   SECTION("Creating a table with an invalid name should fail") {

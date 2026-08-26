@@ -192,9 +192,11 @@ int main() {
   }
 
   // open the table to work with it
-  LanceDBTable* tbl = lancedb_connection_open_table(db, table_name.c_str());
-  if (!tbl) {
-    std::cerr << "failed to open table: " << table_name << std::endl;
+  LanceDBTable* tbl = nullptr;
+  if (const LanceDBError result = lancedb_connection_open_table(db, table_name.c_str(), &tbl, nullptr);
+      result != LANCEDB_SUCCESS) {
+    std::cerr << "failed to open table: " << table_name <<
+      ", error: " << lancedb_error_to_message(result) << std::endl;
     lancedb_connection_free(db);
     return 1;
   }
@@ -414,7 +416,9 @@ int main() {
   } else {
     std::cout << name_count << " tables found" << std::endl;
     for (size_t i = 0; i < name_count; i++) {
-      if (LanceDBTable* tbl = lancedb_connection_open_table(db, table_names[i]); tbl) {
+      LanceDBTable* tbl = nullptr;
+      if (const LanceDBError open_result = lancedb_connection_open_table(db, table_names[i], &tbl, nullptr);
+          open_result == LANCEDB_SUCCESS) {
 
         // get the schema of the table
         struct ArrowSchema* c_schema_ptr;
@@ -566,7 +570,8 @@ int main() {
         }
         lancedb_table_free(tbl);
       } else {
-        std::cerr << "error opening table: " << table_names[i] << std::endl;
+        std::cerr << "error opening table: " << table_names[i] <<
+          ", error: " << lancedb_error_to_message(open_result) << std::endl;
       }
     }
   }

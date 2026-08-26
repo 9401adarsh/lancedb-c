@@ -74,6 +74,10 @@ public:
 
   void create_empty_table(const std::string& table_name);
   LanceDBTable* create_table_with_data(const std::string& table_name, int num_rows, int start_index);
+  // Open an existing table, requiring the table to be opened successfully
+  LanceDBTable* open_table(const std::string& table_name);
+  // Require that a table cannot be opened because it does not exist
+  void require_table_not_found(const std::string& table_name);
 };
 
 class LanceDBSessionFixture : public LanceDBFixture {

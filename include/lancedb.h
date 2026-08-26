@@ -111,7 +111,10 @@ typedef enum {
     LANCEDB_NOT_SUPPORTED = 19,
     LANCEDB_OTHER = 20,
     LANCEDB_NAMESPACE = 21,
-    LANCEDB_UNKNOWN = 22
+    LANCEDB_PERMISSION_DENIED = 22,
+    LANCEDB_NOT_FOUND = 23,
+    /* keep last, so that new error codes can be added without renumbering */
+    LANCEDB_UNKNOWN = 99
 } LanceDBError;
 
 /**
@@ -140,8 +143,15 @@ static const char* LANCEDB_ERROR_MESSAGES[] = {
     "Operation not supported",
     "Other error",
     "Namespace error",
-    "Unknown error"
+    "Permission denied",
+    "Not found"
 };
+
+/**
+ * Error message for LANCEDB_UNKNOWN, which is not part of LANCEDB_ERROR_MESSAGES
+ * since it is deliberately kept out of the range of the other error codes
+ */
+static const char* LANCEDB_UNKNOWN_ERROR_MESSAGE = "Unknown error";
 
 /**
  * Convert error code to error message
@@ -153,7 +163,10 @@ static const char* LANCEDB_ERROR_MESSAGES[] = {
  * The caller must not free the returned string.
  */
 [[maybe_unused]] static const char* lancedb_error_to_message(LanceDBError error) {
-    if (error > LANCEDB_UNKNOWN) {
+    if (error == LANCEDB_UNKNOWN) {
+        return LANCEDB_UNKNOWN_ERROR_MESSAGE;
+    }
+    if (error >= sizeof(LANCEDB_ERROR_MESSAGES)/sizeof(LANCEDB_ERROR_MESSAGES[0])) {
         return "Invalid error code";
     }
     return LANCEDB_ERROR_MESSAGES[error];
@@ -481,13 +494,19 @@ void lancedb_table_names_builder_free(LanceDBTableNamesBuilder* builder);
  *
  * @param connection - pointer to LanceDBConnection
  * @param table_name - null-terminated C string containing the table name
- * @return Non-null pointer to LanceDBTable on success, NULL on failure
+ * @param table_out - pointer to receive the opened table
+ * @param error_message - optional pointer to receive detailed error message (NULL to ignore)
+ * @return Error code indicating success or failure.
  *
- * The returned table must be freed with lancedb_table_free().
+ * On success, the table returned in table_out must be freed with lancedb_table_free().
+ * If error_message is provided and an error occurs, the caller must free
+ * the error message with lancedb_free_string().
  */
-LanceDBTable* lancedb_connection_open_table(
+LanceDBError lancedb_connection_open_table(
     const LanceDBConnection* connection,
-    const char* table_name
+    const char* table_name,
+    LanceDBTable** table_out,
+    char** error_message
 );
 
 /**

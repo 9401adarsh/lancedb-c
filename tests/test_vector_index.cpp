@@ -184,8 +184,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Vector Index", "[vector_index]") {
   SECTION("Create IVF_FLAT index on empty table should fail") {
     // Create empty table
     create_empty_table(table_name);
-    LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-    REQUIRE(table != nullptr);
+    LanceDBTable* table = open_table(table_name);
 
     // Try to create IVF_FLAT index on empty table (should fail - needs training data)
     const char* columns[] = {"data"};

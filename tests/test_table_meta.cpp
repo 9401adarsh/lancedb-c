@@ -41,8 +41,7 @@ TEST_CASE_METHOD(LanceDBFixture, "LanceDB Table List Versions", "[table]") {
   SECTION("List versions after adding data") {
     const std::string table_name = "versions_add_test";
     create_empty_table(table_name);
-    LanceDBTable* table = lancedb_connection_open_table(db, table_name.c_str());
-    REQUIRE(table != nullptr);
+    LanceDBTable* table = open_table(table_name);
 
     // Add data 3 times to create versions 2, 3, 4
     char* error_message = nullptr;
