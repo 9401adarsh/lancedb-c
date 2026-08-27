@@ -34,3 +34,29 @@ datafusion-physical-expr = "54"
 futures = "0"
 stacker = "0.1"
 chrono = "0"
+
+# This is done to build my local version of lance for cache injection.
+[patch.crates-io]
+lance = { path = "../lance/rust/lance" }
+lance-arrow = { path = "../lance/rust/lance-arrow" }
+lance-arrow-scalar = { path = "../lance/rust/arrow-scalar" }
+lance-arrow-stats = { path = "../lance/rust/arrow-stats" }
+lance-bitpacking = { path = "../lance/rust/compression/bitpacking" }
+lance-core = { path = "../lance/rust/lance-core" }
+lance-datafusion = { path = "../lance/rust/lance-datafusion" }
+lance-datagen = { path = "../lance/rust/lance-datagen" }
+lance-derive = { path = "../lance/rust/lance-derive" }
+lance-encoding = { path = "../lance/rust/lance-encoding" }
+lance-file = { path = "../lance/rust/lance-file" }
+lance-geo = { path = "../lance/rust/lance-geo" }
+lance-index = { path = "../lance/rust/lance-index" }
+lance-index-core = { path = "../lance/rust/lance-index-core" }
+lance-io = { path = "../lance/rust/lance-io" }
+lance-linalg = { path = "../lance/rust/lance-linalg" }
+lance-namespace = { path = "../lance/rust/lance-namespace" }
+lance-namespace-datafusion = { path = "../lance/rust/lance-namespace-datafusion" }
+lance-namespace-impls = { path = "../lance/rust/lance-namespace-impls" }
+lance-select = { path = "../lance/rust/lance-select" }
+lance-table = { path = "../lance/rust/lance-table" }
+lance-tokenizer = { path = "../lance/rust/lance-tokenizer" }
+fsst = { path = "../lance/rust/compression/fsst" }
